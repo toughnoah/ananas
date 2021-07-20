@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/toughnoah/ananas/driver"
 	"log"
 	"os"
@@ -12,25 +13,28 @@ import (
 
 func main() {
 	var (
-		endpoint   = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/azure.noah.csi.com/csi.sock", "CSI endpoint.")
-		aad   = flag.String("aad", "login.partner.microsoftonline.cn", "Azure AAD Endpoint.")
-		azureResource   = flag.String("azure_resource", "management.chinacloudapi.cn", "azure resource management endpoint.")
-		clientId   = flag.String("client_id", "", "azure client id.")
+		endpoint       = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/azure.noah.csi.com/csi.sock", "CSI endpoint.")
+		aad            = flag.String("aad", "login.partner.microsoftonline.cn", "Azure AAD Endpoint. default login.partner.microsoftonline.cn")
+		azureResource  = flag.String("azure_resource", "management.chinacloudapi.cn", "azure resource management endpoint. default china management.chinacloudapi.cn.")
+		clientId       = flag.String("client_id", "", "azure client id.")
 		clientSecret   = flag.String("client_secret", "", "azure client secret.")
 		clientTenant   = flag.String("client_tenant", "", "azure client tenant.")
-		subscriptionId   = flag.String("subscription_id", "", "azure subscription id.")
-		resourceGroup   = flag.String("resource_group", "", "azure resource group.")
+		subscriptionId = flag.String("subscription_id", "", "azure subscription id.")
+		resourceGroup  = flag.String("resource_group", "", "azure resource group.")
+		location       = flag.String("location", "chinaeast2", "azure resource location.")
 	)
-	az :=&driver.Azure{
-		AAD: *aad,
-		Resource: *azureResource,
-		ClientId: *clientId,
-		ClientSecret: *clientSecret,
-		ClientTenant: *clientTenant,
+	flag.Parse()
+	az := &driver.Azure{
+		AAD:            fmt.Sprintf("https://%s", *aad),
+		Resource:       fmt.Sprintf("https://%s", *azureResource),
+		ClientId:       *clientId,
+		ClientSecret:   *clientSecret,
+		ClientTenant:   *clientTenant,
 		SubscriptionId: *subscriptionId,
-		ResourceGroup: *resourceGroup,
+		ResourceGroup:  *resourceGroup,
+		Location:       *location,
 	}
-	drv, err := driver.NewDriver(*endpoint,az)
+	drv, err := driver.NewDriver(*endpoint, az)
 	if err != nil {
 		log.Fatalln(err)
 	}
