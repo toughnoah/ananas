@@ -3,8 +3,6 @@ package driver
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -28,36 +26,25 @@ const (
 //
 
 type Driver struct {
-	name       string
-	azure      Azure
-	endpoint   string
-	diskClient compute.DisksClient
-	vmClient   compute.VirtualMachinesClient
-	srv        *grpc.Server
-	log        *logrus.Entry
+	name     string
+	az       Azure
+	endpoint string
+	srv      *grpc.Server
+	log      *logrus.Entry
 }
 
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managing DigitalOcean Block Storage
 func NewDriver(ep string, az *Azure) (*Driver, error) {
-	authorizer, err := az.NewAzureAuthorizer()
-	if err != nil {
-		return nil, err
-	}
-	diskClient := az.NewDiskClient()
-	diskClient.Authorizer = authorizer
-
-	vmClient := az.NewVmClient()
-	vmClient.Authorizer = authorizer
 	return &Driver{
-		name:       DefaultDriverName,
-		endpoint:   ep,
-		diskClient: diskClient,
-		vmClient:   vmClient,
+		az:       *az,
+		name:     DefaultDriverName,
+		endpoint: ep,
 		log: logrus.New().WithFields(logrus.Fields{
 			"resource_group":  az.ResourceGroup,
 			"subscription_id": az.SubscriptionId,
+			"Location":        az.Location,
 		}),
 	}, nil
 }
@@ -66,8 +53,10 @@ func (d *Driver) Run(ctx context.Context) error {
 	var eg errgroup.Group
 	// log response errors for better observability
 	errHandler := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// the actual rpc call
 		resp, err := handler(ctx, req)
 		if err != nil {
+			// posting action
 			d.log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
 		}
 		return resp, err
@@ -75,8 +64,8 @@ func (d *Driver) Run(ctx context.Context) error {
 
 	d.srv = grpc.NewServer(grpc.UnaryInterceptor(errHandler))
 	csi.RegisterIdentityServer(d.srv, d)
-	//csi.RegisterControllerServer(d.srv, d)
-	//csi.RegisterNodeServer(d.srv, d)
+	csi.RegisterControllerServer(d.srv, d)
+	csi.RegisterNodeServer(d.srv, d)
 
 	u, err := url.Parse(d.endpoint)
 	if err != nil {
