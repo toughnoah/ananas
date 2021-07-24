@@ -13,7 +13,7 @@ import (
 
 func main() {
 	var (
-		endpoint       = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/azure.noah.csi.com/csi.sock", "CSI endpoint.")
+		endpoint       = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/ananas.noah.csi.com/csi.sock", "CSI endpoint.")
 		aad            = flag.String("aad", "login.partner.microsoftonline.cn", "Azure AAD Endpoint. default login.partner.microsoftonline.cn")
 		azureResource  = flag.String("azure_resource", "management.chinacloudapi.cn", "azure resource management endpoint. default china management.chinacloudapi.cn.")
 		clientId       = flag.String("client_id", "", "azure client id.")
@@ -22,6 +22,8 @@ func main() {
 		subscriptionId = flag.String("subscription_id", "", "azure subscription id.")
 		resourceGroup  = flag.String("resource_group", "", "azure resource group.")
 		location       = flag.String("location", "chinaeast2", "azure resource location.")
+		// use k8s downward API to get spec.nodename
+		nodeId = flag.String("node", "", "azure k8s node name")
 	)
 	flag.Parse()
 	az := &driver.Azure{
@@ -33,6 +35,7 @@ func main() {
 		SubscriptionId: *subscriptionId,
 		ResourceGroup:  *resourceGroup,
 		Location:       *location,
+		NodeId:         *nodeId,
 	}
 	drv, err := driver.NewDriver(*endpoint, az)
 	if err != nil {

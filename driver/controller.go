@@ -122,6 +122,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 					},
 				},
 			},
+			VolumeContext: map[string]string{},
 		},
 	}
 	log.WithField("response", future).Info("volume was created")
@@ -224,7 +225,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	log.Info("attach success")
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
-			req.VolumeId: req.NodeId,
+			req.VolumeId: strconv.Itoa(int(*lun)),
 		},
 	}, nil
 }
@@ -346,9 +347,9 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 	for _, cap := range []csi.ControllerServiceCapability_RPC_Type{
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
-		csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-		csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+		//csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
+		//csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+		//csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 	} {
 		caps = append(caps, newCap(cap))
 	}

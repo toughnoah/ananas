@@ -9,8 +9,11 @@ require (
 	github.com/Azure/go-autorest/autorest/to v0.4.0
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/container-storage-interface/spec v1.5.0
+	github.com/golang/protobuf v1.4.3
 	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	google.golang.org/grpc v1.39.0
 	k8s.io/apimachinery v0.21.3
+	k8s.io/klog/v2 v2.8.0
+	k8s.io/utils v0.0.0-20210709001253-0e1f9d693477
 )

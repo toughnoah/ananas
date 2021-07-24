@@ -1,0 +1,87 @@
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: csi-do-controller
+  namespace: ananas
+spec:
+  serviceName: "csi-ananas"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ananas
+        role: csi-azure
+    spec:
+      serviceAccount: ananas
+      containers:
+        - name: csi-provisioner
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-provisioner:v2.1.1
+          args:
+            - "--feature-gates=Topology=true"
+            - "--csi-address=$(ADDRESS)"
+            - "--v=2"
+            - "--timeout=15s"
+            - "--leader-election"
+            - "--worker-threads=40"
+            - "--extra-create-metadata=true"
+            - "--strict-topology=true"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+          resources:
+            limits:
+              cpu: 100m
+              memory: 300Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
+        - name: csi-attacher
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-attacher:v3.1.0
+          args:
+            - "-v=2"
+            - "-csi-address=$(ADDRESS)"
+            - "-timeout=600s"
+            - "-leader-election"
+            - "-worker-threads=500"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+        - name: csi-ananas
+        - name: csi-ananas
+          image: toughnoah/ananas:v1.0
+          args :
+            - "--client_id=$(CLIENT_ID)"
+            - "--client_secret=$(CLIENT_SECRET)"
+            - "--client_tenant=$(CLIENT_TENANT)"
+            - "--subscription_id=$(SUBSCRIPTION_ID)"
+            - "--resource_group=$(RESOURCE_GROUP)"
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--node=$(KUBE_NODE_NAME)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: CLIENT_ID
+              value:
+            - name: CLIENT_SECRET
+              value:
+            - name: CLIENT_TENANT
+              value:
+            - name: SUBSCRIPTION_ID
+              value:
+            - name: RESOURCE_GROUP
+              value:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
