@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultDriverName = "azure.noah.csi.com"
+	DefaultDriverName = "ananas.noah.csi.com"
 )
 
 //  Driver implements the following CSI interfaces:

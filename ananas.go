@@ -11,12 +11,6 @@ import (
 	"syscall"
 )
 
-const (
-	defaultPluginPath  = "/var/lib/kubelet/plugins"
-	defaultStagingPath = defaultPluginPath + "/kubernetes.io/csi/pv/"
-)
-
-
 func main() {
 	var (
 		endpoint       = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/ananas.noah.csi.com/csi.sock", "CSI endpoint.")
@@ -29,7 +23,7 @@ func main() {
 		resourceGroup  = flag.String("resource_group", "", "azure resource group.")
 		location       = flag.String("location", "chinaeast2", "azure resource location.")
 		// use k8s downward API to get spec.nodename
-		nodeId       = flag.String("node", "", "azure k8s node name")
+		nodeId = flag.String("node", "", "azure k8s node name")
 	)
 	flag.Parse()
 	az := &driver.Azure{
@@ -41,7 +35,7 @@ func main() {
 		SubscriptionId: *subscriptionId,
 		ResourceGroup:  *resourceGroup,
 		Location:       *location,
-		NodeId:       *nodeId,
+		NodeId:         *nodeId,
 	}
 	drv, err := driver.NewDriver(*endpoint, az)
 	if err != nil {
