@@ -15,6 +15,7 @@ type Azure struct {
 	ClientTenant,
 	SubscriptionId,
 	Location,
+	NodeId,
 	ResourceGroup string
 }
 
@@ -35,6 +36,7 @@ func (az *Azure) NewAzureAuthorizer() (autorest.Authorizer, error) {
 
 func (az *Azure) NewAzureDisk(size int64, Name string) compute.Disk {
 	newDisk := compute.Disk{
+		ID:       to.StringPtr(Name),
 		Name:     &Name,
 		Location: to.StringPtr(az.Location),
 		DiskProperties: &compute.DiskProperties{

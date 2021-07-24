@@ -122,6 +122,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 					},
 				},
 			},
+			VolumeContext: map[string]string{},
 		},
 	}
 	log.WithField("response", future).Info("volume was created")
@@ -224,7 +225,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	log.Info("attach success")
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
-			req.VolumeId: req.NodeId,
+			req.VolumeId: strconv.Itoa(int(*lun)),
 		},
 	}, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
+	. "github.com/toughnoah/ananas/pkg"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"net"
@@ -26,26 +27,31 @@ const (
 //
 
 type Driver struct {
-	name     string
-	az       Azure
-	endpoint string
-	srv      *grpc.Server
-	log      *logrus.Entry
+	name        string
+	az          Azure
+	endpoint    string
+	srv         *grpc.Server
+	log         *logrus.Entry
+	mounter     *mounter
+	volumeLocks *VolumeLocks
 }
 
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managing DigitalOcean Block Storage
 func NewDriver(ep string, az *Azure) (*Driver, error) {
+	log := logrus.New().WithFields(logrus.Fields{
+		"resource_group":  az.ResourceGroup,
+		"subscription_id": az.SubscriptionId,
+		"Location":        az.Location,
+	})
 	return &Driver{
-		az:       *az,
-		name:     DefaultDriverName,
-		endpoint: ep,
-		log: logrus.New().WithFields(logrus.Fields{
-			"resource_group":  az.ResourceGroup,
-			"subscription_id": az.SubscriptionId,
-			"Location":        az.Location,
-		}),
+		az:          *az,
+		name:        DefaultDriverName,
+		endpoint:    ep,
+		log:         log,
+		mounter:     newMounter(log),
+		volumeLocks: NewVolumeLocks(),
 	}, nil
 }
 
