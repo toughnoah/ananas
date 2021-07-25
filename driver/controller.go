@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -35,17 +34,6 @@ const (
 	// defaultVolumeSizeInBytes is used when the user did not provide a size or
 	// the size they provided did not satisfy our requirements
 	defaultVolumeSizeInBytes int64 = 32 * giB
-
-	// createdByDO is used to tag volumes that are created by this CSI plugin
-	createdByAnanas = "Created by AzureDisk CSI driver"
-
-	// doAPITimeout sets the timeout we will use when communicating with the
-	// Digital Ocean API. NOTE: some queries inherit the context timeout
-	doAPITimeout = 10 * time.Second
-
-	// maxVolumesPerDropletErrorMessage is the error message returned by the DO
-	// API when the per-droplet volume limit would be exceeded.
-	maxVolumesPerDropletErrorMessage = "cannot attach more than 16 volumes to a single Droplet"
 )
 
 var (
