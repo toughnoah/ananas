@@ -45,11 +45,11 @@ const (
 
 	// maxVolumesPerDropletErrorMessage is the error message returned by the DO
 	// API when the per-droplet volume limit would be exceeded.
-	maxVolumesPerDropletErrorMessage = "cannot attach more than 7 volumes to a single Droplet"
+	maxVolumesPerDropletErrorMessage = "cannot attach more than 16 volumes to a single Droplet"
 )
 
 var (
-	// Testing currently only supports a single node to be attached to a single node
+	// Azure disk currently only supports a single node to be attached
 	// in read/write mode. This corresponds to `accessModes.ReadWriteOnce` in a
 	// PVC resource on Kubernetes
 	supportedAccessMode = &csi.VolumeCapability_AccessMode{
@@ -86,11 +86,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	}
 	volumeName := req.Name
 	log := d.log.WithFields(logrus.Fields{
-		"volume_name":             volumeName,
-		"storage_size_giga_bytes": size / giB,
-		"method":                  "create_volume",
-		"volume_capabilities":     req.VolumeCapabilities,
-		"location":                d.az.Location,
+		"volume_name":         volumeName,
+		"storage_size":        size / giB,
+		"method":              "create_volume",
+		"volume_capabilities": req.VolumeCapabilities,
+		"location":            d.az.Location,
 	})
 	log.Info("create volume called")
 	// get volume first, if it's created do no thing
@@ -102,7 +102,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.AlreadyExists, "fatal issue: duplicate volume %q exists", volumeName)
 	}
 	// create logic
-	newVolume := d.az.NewAzureDisk(size, req.Name)
+	gbSize := RoundUpGiB(size)
+	newVolume := d.az.NewAzureDisk(int32(gbSize), req.Name)
 	future, err := diskClient.CreateOrUpdate(ctx, d.az.ResourceGroup, req.Name, newVolume)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -158,7 +159,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	log.WithField("response", future).Info("volume was deleted")
+	log.WithField("response", future.Response().StatusCode).Info("volume was deleted")
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -482,4 +483,23 @@ func formatBytes(inputBytes int64) string {
 	result := strconv.FormatFloat(output, 'f', 1, 64)
 	result = strings.TrimSuffix(result, ".0")
 	return result + unit
+}
+
+// RoundUpGiB rounds up the volume size in bytes upto multiplications of GiB
+// in the unit of GiB
+func RoundUpGiB(volumeSizeBytes int64) int64 {
+	return roundUpSize(volumeSizeBytes, giB)
+}
+
+// roundUpSize calculates how many allocation units are needed to accommodate
+// a volume of given size. E.g. when user wants 1500MiB volume, while AWS EBS
+// allocates volumes in gibibyte-sized chunks,
+// RoundUpSize(1500 * 1024*1024, 1024*1024*1024) returns '2'
+// (2 GiB is the smallest allocatable volume that can hold 1500MiB)
+func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
+	roundedUp := volumeSizeBytes / allocationUnitBytes
+	if volumeSizeBytes%allocationUnitBytes > 0 {
+		roundedUp++
+	}
+	return roundedUp
 }
