@@ -198,8 +198,12 @@ func (handler *osIOHandler) ReadFile(filename string) ([]byte, error) {
 }
 
 type volumeStatistics struct {
-	availableBytes, totalBytes, usedBytes    int64
-	availableInodes, totalInodes, usedInodes int64
+	//availableBytes,
+	totalBytes int64
+	//usedBytes    int64
+	//availableInodes,
+	//totalInodes,
+	//usedInodes int64
 }
 
 type Mounter interface {
