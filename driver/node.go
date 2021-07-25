@@ -7,7 +7,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/kubernetes/pkg/volume"
+	"k8s.io/kubernetes/pkg/volume/util/hostutil"
 	"k8s.io/utils/exec"
+	"os"
 	"strconv"
 )
 
@@ -209,8 +212,87 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-func (d *Driver) NodeGetVolumeStats(ctx context.Context, request *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	panic("implement me")
+func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	if len(req.VolumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume ID was empty")
+	}
+	if len(req.VolumePath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume path was empty")
+	}
+
+	_, err := os.Stat(req.VolumePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Errorf(codes.NotFound, "path %s does not exist", req.VolumePath)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to stat file %s: %v", req.VolumePath, err)
+	}
+
+	isBlock, err := hostutil.NewHostUtil().PathIsDevice(req.VolumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "failed to determine whether %s is block device: %v", req.VolumePath, err)
+	}
+	if isBlock {
+		bcap, err := d.mounter.GetStatistics(req.GetVolumePath())
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get block capacity on path %s: %v", req.VolumePath, err)
+		}
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:  csi.VolumeUsage_BYTES,
+					Total: bcap.totalBytes,
+				},
+			},
+		}, nil
+	}
+
+	volumeMetrics, err := volume.NewMetricsStatFS(req.VolumePath).GetMetrics()
+	if err != nil {
+		return nil, err
+	}
+	available, ok := volumeMetrics.Available.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform volume available size(%v)", volumeMetrics.Available)
+	}
+	capacity, ok := volumeMetrics.Capacity.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform volume capacity size(%v)", volumeMetrics.Capacity)
+	}
+	used, ok := volumeMetrics.Used.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform volume used size(%v)", volumeMetrics.Used)
+	}
+
+	inodesFree, ok := volumeMetrics.InodesFree.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes free(%v)", volumeMetrics.InodesFree)
+	}
+	inodes, ok := volumeMetrics.Inodes.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes(%v)", volumeMetrics.Inodes)
+	}
+	inodesUsed, ok := volumeMetrics.InodesUsed.AsInt64()
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to transform disk inodes used(%v)", volumeMetrics.InodesUsed)
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			{
+				Unit:      csi.VolumeUsage_BYTES,
+				Available: available,
+				Total:     capacity,
+				Used:      used,
+			},
+			{
+				Unit:      csi.VolumeUsage_INODES,
+				Available: inodesFree,
+				Total:     inodes,
+				Used:      inodesUsed,
+			},
+		},
+	}, nil
 }
 
 func (d *Driver) NodeExpandVolume(ctx context.Context, request *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
@@ -226,13 +308,13 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, request *csi.NodeGetCa
 				},
 			},
 		},
-		//{
-		//	Type: &csi.NodeServiceCapability_Rpc{
-		//		Rpc: &csi.NodeServiceCapability_RPC{
-		//			Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-		//		},
-		//	},
-		//},
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+				},
+			},
+		},
 		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{

@@ -34,7 +34,7 @@ func (az *Azure) NewAzureAuthorizer() (autorest.Authorizer, error) {
 	return ccc.Authorizer()
 }
 
-func (az *Azure) NewAzureDisk(size int64, Name string) compute.Disk {
+func (az *Azure) NewAzureDisk(size int32, Name string) compute.Disk {
 	newDisk := compute.Disk{
 		ID:       to.StringPtr(Name),
 		Name:     &Name,
@@ -43,7 +43,7 @@ func (az *Azure) NewAzureDisk(size int64, Name string) compute.Disk {
 			CreationData: &compute.CreationData{
 				CreateOption: compute.Empty,
 			},
-			DiskSizeGB: to.Int32Ptr(64),
+			DiskSizeGB: to.Int32Ptr(size),
 		},
 		Sku: &compute.DiskSku{
 			Name: compute.PremiumLRS,

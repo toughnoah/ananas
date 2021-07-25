@@ -422,8 +422,8 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 		}
 		return false, err
 	}
-
-	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-m", target}
+	// this is quite different from the host, -M means mountpoint, -J means formant output to json
+	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", target, "-J"}
 
 	m.log.WithFields(logrus.Fields{
 		"cmd":  findmntCmd,
