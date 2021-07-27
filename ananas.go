@@ -3,41 +3,34 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"github.com/toughnoah/ananas/driver"
 	"log"
 	"os"
 	"os/signal"
+	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"syscall"
 )
 
 func main() {
 	var (
-		endpoint       = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/ananas.noah.csi.com/csi.sock", "CSI endpoint.")
-		aad            = flag.String("aad", "login.partner.microsoftonline.cn", "Azure AAD Endpoint. default login.partner.microsoftonline.cn")
-		azureResource  = flag.String("azure_resource", "management.chinacloudapi.cn", "azure resource management endpoint. default china management.chinacloudapi.cn.")
-		clientId       = flag.String("client_id", "", "azure client id.")
-		clientSecret   = flag.String("client_secret", "", "azure client secret.")
-		clientTenant   = flag.String("client_tenant", "", "azure client tenant.")
-		subscriptionId = flag.String("subscription_id", "", "azure subscription id.")
-		resourceGroup  = flag.String("resource_group", "", "azure resource group.")
-		location       = flag.String("location", "chinaeast2", "azure resource location.")
+		endpoint = flag.String("endpoint", "unix:///csi/csi.sock", "CSI endpoint.")
+		config   = flag.String("config", "/etc/kubernetes/cloud_config", "cloud config path.")
 		// use k8s downward API to get spec.nodename
 		nodeId = flag.String("node", "", "azure k8s node name")
 	)
 	flag.Parse()
-	az := &driver.Azure{
-		AAD:            fmt.Sprintf("https://%s", *aad),
-		Resource:       fmt.Sprintf("https://%s", *azureResource),
-		ClientId:       *clientId,
-		ClientSecret:   *clientSecret,
-		ClientTenant:   *clientTenant,
-		SubscriptionId: *subscriptionId,
-		ResourceGroup:  *resourceGroup,
-		Location:       *location,
-		NodeId:         *nodeId,
+	cfg, err := os.Open(*config)
+	if err != nil {
+		log.Fatalln(err)
 	}
-	drv, err := driver.NewDriver(*endpoint, az)
+	az, err := azure.NewCloudWithoutFeatureGates(cfg, false)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	mounter := driver.NewMounter()
+
+	drv, err := driver.NewDriver(*endpoint, *nodeId, az, mounter)
 	if err != nil {
 		log.Fatalln(err)
 	}

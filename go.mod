@@ -3,24 +3,31 @@ module github.com/toughnoah/ananas
 go 1.16
 
 require (
-	github.com/Azure/azure-sdk-for-go v50.1.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.11.17
-	github.com/Azure/go-autorest/autorest/azure/auth v0.5.6
-	github.com/Azure/go-autorest/autorest/to v0.4.0
+	github.com/Azure/azure-sdk-for-go v54.1.0+incompatible
+	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
+	github.com/bouk/monkey v1.0.2
 	github.com/container-storage-interface/spec v1.5.0
+	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.3
+	github.com/golangplus/bytes v1.0.0 // indirect
+	github.com/golangplus/testing v1.0.0
+	github.com/google/uuid v1.1.2
+	github.com/kubernetes-csi/csi-test/v4 v4.2.0
 	github.com/sirupsen/logrus v1.8.1
+	github.com/stretchr/testify v1.6.1
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
 	google.golang.org/grpc v1.39.0
-	k8s.io/apimachinery v0.21.3
+	k8s.io/apimachinery v0.22.0-alpha.0.0.20210417144234-8daf28983e6e
 	k8s.io/klog/v2 v2.8.0
 	k8s.io/kubernetes v1.21.3
 	k8s.io/utils v0.0.0-20210709001253-0e1f9d693477
+	sigs.k8s.io/cloud-provider-azure v1.0.3
 )
 
 replace (
+	github.com/bouk/monkey v1.0.2 => bou.ke/monkey v1.0.0
 	k8s.io/api => k8s.io/api v0.21.0
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.21.0
 	k8s.io/apimachinery => k8s.io/apimachinery v0.21.0

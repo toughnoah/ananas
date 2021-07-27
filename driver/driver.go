@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
 
 const (
@@ -28,29 +29,29 @@ const (
 
 type Driver struct {
 	name        string
-	az          Azure
+	az          *azure.Cloud
 	endpoint    string
 	srv         *grpc.Server
+	nodeId      string
 	log         *logrus.Entry
-	mounter     *mounter
+	mounter     Mounter
 	volumeLocks *VolumeLocks
 }
 
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managing DigitalOcean Block Storage
-func NewDriver(ep string, az *Azure) (*Driver, error) {
+func NewDriver(ep, nodeId string, az *azure.Cloud, mounter Mounter) (*Driver, error) {
 	log := logrus.New().WithFields(logrus.Fields{
-		"resource_group":  az.ResourceGroup,
-		"subscription_id": az.SubscriptionId,
-		"Location":        az.Location,
+		"nodeId": nodeId,
 	})
 	return &Driver{
-		az:          *az,
+		az:          az,
 		name:        DefaultDriverName,
 		endpoint:    ep,
 		log:         log,
-		mounter:     newMounter(log),
+		nodeId:      nodeId,
+		mounter:     mounter,
 		volumeLocks: NewVolumeLocks(),
 	}, nil
 }
@@ -98,4 +99,12 @@ func (d *Driver) Run(ctx context.Context) error {
 		return d.srv.Serve(grpcListener)
 	})
 	return eg.Wait()
+}
+
+func (d *Driver) GetCloud() *azure.Cloud {
+	return d.az
+}
+
+func (d *Driver) SetLog(log *logrus.Entry) {
+	d.log = log
 }

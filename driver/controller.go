@@ -4,36 +4,17 @@ import (
 	"context"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/go-autorest/autorest/to"
+	compute2 "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
+	. "github.com/toughnoah/ananas/pkg"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"strconv"
 	"strings"
-)
-
-const (
-	_   = iota
-	kiB = 1 << (10 * iota)
-	miB
-	giB
-	tiB
-)
-
-const (
-	// minimumVolumeSizeInBytes is used to validate that the user is not trying
-	// to create a volume that is smaller than what we support
-	minimumVolumeSizeInBytes int64 = 1 * giB
-
-	// maximumVolumeSizeInBytes is used to validate that the user is not trying
-	// to create a volume that is larger than what we support
-	maximumVolumeSizeInBytes int64 = 4 * tiB
-
-	// defaultVolumeSizeInBytes is used when the user did not provide a size or
-	// the size they provided did not satisfy our requirements
-	defaultVolumeSizeInBytes int64 = 32 * giB
 )
 
 var (
@@ -46,60 +27,33 @@ var (
 )
 
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	diskClient := d.az.NewDiskClient()
-	authorizer, err := d.az.NewAzureAuthorizer()
+	size, err := ValidateCreateVolume(req)
 	if err != nil {
 		return nil, err
-	}
-	//Azure disk client
-
-	diskClient.Authorizer = authorizer
-
-	//Azure vm client
-	if req.Name == "" {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Name must be provided")
-	}
-
-	if req.VolumeCapabilities == nil || len(req.VolumeCapabilities) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
-	}
-
-	if violations := validateCapabilities(req.VolumeCapabilities); len(violations) > 0 {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("volume capabilities cannot be satisified: %s", strings.Join(violations, "; ")))
-	}
-
-	size, err := extractStorage(req.CapacityRange)
-	if err != nil {
-		return nil, status.Errorf(codes.OutOfRange, "invalid capacity range: %v", err)
 	}
 	volumeName := req.Name
 	log := d.log.WithFields(logrus.Fields{
 		"volume_name":         volumeName,
-		"storage_size":        size / giB,
+		"storage_size":        size / GiB,
 		"method":              "create_volume",
 		"volume_capabilities": req.VolumeCapabilities,
 		"location":            d.az.Location,
 	})
 	log.Info("create volume called")
 	// get volume first, if it's created do no thing
-	volume, err := diskClient.Get(ctx, d.az.ResourceGroup, volumeName)
-	if err != nil && volume.StatusCode != 404 {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	if err == nil && volume.StatusCode == 200 {
-		return nil, status.Errorf(codes.AlreadyExists, "fatal issue: duplicate volume %q exists", volumeName)
-	}
 	// create logic
 	gbSize := RoundUpGiB(size)
-	newVolume := d.az.NewAzureDisk(int32(gbSize), req.Name)
-	future, err := diskClient.CreateOrUpdate(ctx, d.az.ResourceGroup, req.Name, newVolume)
+	volumeOptions := &azure.ManagedDiskOptions{
+		DiskName:           volumeName,
+		StorageAccountType: compute2.DiskStorageAccountTypes(compute.PremiumLRS),
+		ResourceGroup:      d.az.ResourceGroup,
+		SizeGB:             int(gbSize),
+	}
+	diskUri, err := d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	err = future.WaitForCompletionRef(ctx, diskClient.Client)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
+
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      req.Name,
@@ -108,13 +62,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 				{
 					Segments: map[string]string{
 						"location": d.az.Location,
+						"diskUri":  diskUri,
 					},
 				},
 			},
 			VolumeContext: map[string]string{},
 		},
 	}
-	log.WithField("response", future).Info("volume was created")
+	log.WithField("response", diskUri).Info("volume was created")
 	return resp, nil
 
 }
@@ -130,24 +85,14 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		"method":    "delete_volume",
 	})
 	log.Info("delete volume called")
-
-	diskClient := d.az.NewDiskClient()
-	authorizer, err := d.az.NewAzureAuthorizer()
-	if err != nil {
-		return nil, err
-	}
+	volume := req.GetVolumeId()
+	diskUri := d.GetDiskUri(volume)
+	err := d.az.ManagedDiskController.DeleteManagedDisk(diskUri)
 	//Azure disk client
-	diskClient.Authorizer = authorizer
-
-	future, err := diskClient.Delete(ctx, d.az.ResourceGroup, req.GetVolumeId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	err = future.WaitForCompletionRef(ctx, diskClient.Client)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	log.WithField("response", future.Response().StatusCode).Info("volume was deleted")
+	log.WithField("response", volume).Info("volume was deleted")
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -168,53 +113,16 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		"method":    "controller_publish_volume",
 	})
 	log.Info("controller publish volume called")
-
-	vmClient := d.az.NewVmClient()
-	authorizer, err := d.az.NewAzureAuthorizer()
+	volume := req.GetVolumeId()
+	diskUri := d.GetDiskUri(volume)
+	lun, err := d.az.AttachDisk(true, volume, diskUri, types.NodeName(req.GetNodeId()), compute2.CachingTypes(compute.CachingTypesReadWrite))
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.NotFound, err.Error())
 	}
-	//Azure disk client
-	vmClient.Authorizer = authorizer
-	future, err := vmClient.Get(ctx, d.az.ResourceGroup, req.NodeId, compute.InstanceView)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "Failed to get request node info")
-	}
-	lun := new(int32)
-	dataDisks := *future.StorageProfile.DataDisks
-	if len(dataDisks) == 0 {
-		*lun = 0
-	} else {
-		*lun = *dataDisks[len(dataDisks)-1].Lun + 1
-	}
-	diskToBeAttach := compute.DataDisk{
-		Lun:          lun,
-		Name:         to.StringPtr(req.GetVolumeId()),
-		CreateOption: compute.DiskCreateOptionTypesAttach,
-		ManagedDisk: &compute.ManagedDiskParameters{
-			StorageAccountType: compute.StorageAccountTypesPremiumLRS,
-			ID: to.StringPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/disks/%s",
-				d.az.SubscriptionId,
-				d.az.ResourceGroup,
-				req.GetVolumeId())),
-		},
-	}
-	dataDisks = append(dataDisks, diskToBeAttach)
-	*future.StorageProfile.DataDisks = dataDisks
-	vmCli, err := vmClient.CreateOrUpdate(ctx, d.az.ResourceGroup, req.GetNodeId(), future)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	err = vmCli.WaitForCompletionRef(ctx, vmClient.Client)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
 	log.Info("attach success")
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
-			req.VolumeId: strconv.Itoa(int(*lun)),
+			req.VolumeId: strconv.Itoa(int(lun)),
 		},
 	}, nil
 }
@@ -233,31 +141,9 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		"method":    "controller_unpublish_volume",
 	})
 	log.Info("controller unpublish volume called")
-	vmClient := d.az.NewVmClient()
-	authorizer, err := d.az.NewAzureAuthorizer()
-	if err != nil {
-		return nil, err
-	}
-	//Azure disk client
-	vmClient.Authorizer = authorizer
-	future, err := vmClient.Get(ctx, d.az.ResourceGroup, req.NodeId, compute.InstanceView)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "Failed to get request node info")
-	}
-	oldDataDisks := *future.StorageProfile.DataDisks
-	newDataDisks := make([]compute.DataDisk, 0)
-	for _, disk := range oldDataDisks {
-		if *disk.Name != req.GetVolumeId() {
-			newDataDisks = append(newDataDisks, disk)
-		}
-	}
-	*future.StorageProfile.DataDisks = newDataDisks
-	vmCli, err := vmClient.CreateOrUpdate(ctx, d.az.ResourceGroup, req.GetNodeId(), future)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	err = vmCli.WaitForCompletionRef(ctx, vmClient.Client)
+	volume := req.GetVolumeId()
+	diskUri := d.GetDiskUri(volume)
+	err := d.az.DetachDisk(volume, diskUri, types.NodeName(req.GetNodeId()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -284,18 +170,8 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	log.Info("validate volume capabilities called")
 
 	// check if volume exist before trying to validate it it
-	diskClient := d.az.NewDiskClient()
-	authorizer, err := d.az.NewAzureAuthorizer()
+	_, _, err := d.az.GetDisk(d.az.ResourceGroup, req.GetVolumeId())
 	if err != nil {
-		return nil, err
-	}
-	//Azure disk client
-	diskClient.Authorizer = authorizer
-	get, err := diskClient.Get(ctx, d.az.ResourceGroup, req.GetVolumeId())
-	if err != nil {
-		if get.StatusCode == 404 {
-			return nil, status.Errorf(codes.NotFound, "volume %q does not exist", req.VolumeId)
-		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// if it's not supported (i.e: wrong region), we shouldn't override it
@@ -374,6 +250,10 @@ func (d *Driver) ControllerGetVolume(ctx context.Context, request *csi.Controlle
 	panic("implement me")
 }
 
+func (d *Driver) GetDiskUri(volume string) string {
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/disks/%s", d.az.SubscriptionID, d.az.ResourceGroup, volume)
+}
+
 // validateCapabilities validates the requested capabilities. It returns a list
 // of violations which may be empty if no violatons were found.
 func validateCapabilities(capabilitys []*csi.VolumeCapability) []string {
@@ -401,7 +281,7 @@ func validateCapabilities(capabilitys []*csi.VolumeCapability) []string {
 // error.
 func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	if capRange == nil {
-		return defaultVolumeSizeInBytes, nil
+		return DefaultVolumeSizeInBytes, nil
 	}
 	requiredBytes := capRange.GetRequiredBytes()
 	requiredSet := 0 < requiredBytes
@@ -409,27 +289,27 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	limitSet := 0 < limitBytes
 
 	if !requiredSet && !limitSet {
-		return defaultVolumeSizeInBytes, nil
+		return DefaultVolumeSizeInBytes, nil
 	}
 
 	if requiredSet && limitSet && limitBytes < requiredBytes {
 		return 0, fmt.Errorf("limit (%v) can not be less than required (%v) size", formatBytes(limitBytes), formatBytes(requiredBytes))
 	}
 
-	if requiredSet && !limitSet && requiredBytes < minimumVolumeSizeInBytes {
-		return 0, fmt.Errorf("required (%v) can not be less than minimum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(minimumVolumeSizeInBytes))
+	if requiredSet && !limitSet && requiredBytes < MinimumVolumeSizeInBytes {
+		return 0, fmt.Errorf("required (%v) can not be less than minimum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(MinimumVolumeSizeInBytes))
 	}
 
-	if limitSet && limitBytes < minimumVolumeSizeInBytes {
-		return 0, fmt.Errorf("limit (%v) can not be less than minimum supported volume size (%v)", formatBytes(limitBytes), formatBytes(minimumVolumeSizeInBytes))
+	if limitSet && limitBytes < MinimumVolumeSizeInBytes {
+		return 0, fmt.Errorf("limit (%v) can not be less than minimum supported volume size (%v)", formatBytes(limitBytes), formatBytes(MinimumVolumeSizeInBytes))
 	}
 
-	if requiredSet && requiredBytes > maximumVolumeSizeInBytes {
-		return 0, fmt.Errorf("required (%v) can not exceed maximum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(maximumVolumeSizeInBytes))
+	if requiredSet && requiredBytes > MaximumVolumeSizeInBytes {
+		return 0, fmt.Errorf("required (%v) can not exceed maximum supported volume size (%v)", formatBytes(requiredBytes), formatBytes(MaximumVolumeSizeInBytes))
 	}
 
-	if !requiredSet && limitSet && limitBytes > maximumVolumeSizeInBytes {
-		return 0, fmt.Errorf("limit (%v) can not exceed maximum supported volume size (%v)", formatBytes(limitBytes), formatBytes(maximumVolumeSizeInBytes))
+	if !requiredSet && limitSet && limitBytes > MaximumVolumeSizeInBytes {
+		return 0, fmt.Errorf("limit (%v) can not exceed maximum supported volume size (%v)", formatBytes(limitBytes), formatBytes(MaximumVolumeSizeInBytes))
 	}
 
 	if requiredSet && limitSet && requiredBytes == limitBytes {
@@ -444,7 +324,7 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 		return limitBytes, nil
 	}
 
-	return defaultVolumeSizeInBytes, nil
+	return DefaultVolumeSizeInBytes, nil
 }
 
 func formatBytes(inputBytes int64) string {
@@ -452,17 +332,17 @@ func formatBytes(inputBytes int64) string {
 	unit := ""
 
 	switch {
-	case inputBytes >= tiB:
-		output = output / tiB
+	case inputBytes >= TiB:
+		output = output / TiB
 		unit = "Ti"
-	case inputBytes >= giB:
-		output = output / giB
+	case inputBytes >= GiB:
+		output = output / GiB
 		unit = "Gi"
-	case inputBytes >= miB:
-		output = output / miB
+	case inputBytes >= MiB:
+		output = output / MiB
 		unit = "Mi"
-	case inputBytes >= kiB:
-		output = output / kiB
+	case inputBytes >= KiB:
+		output = output / KiB
 		unit = "Ki"
 	case inputBytes == 0:
 		return "0"
@@ -471,23 +351,4 @@ func formatBytes(inputBytes int64) string {
 	result := strconv.FormatFloat(output, 'f', 1, 64)
 	result = strings.TrimSuffix(result, ".0")
 	return result + unit
-}
-
-// RoundUpGiB rounds up the volume size in bytes upto multiplications of GiB
-// in the unit of GiB
-func RoundUpGiB(volumeSizeBytes int64) int64 {
-	return roundUpSize(volumeSizeBytes, giB)
-}
-
-// roundUpSize calculates how many allocation units are needed to accommodate
-// a volume of given size. E.g. when user wants 1500MiB volume, while AWS EBS
-// allocates volumes in gibibyte-sized chunks,
-// RoundUpSize(1500 * 1024*1024, 1024*1024*1024) returns '2'
-// (2 GiB is the smallest allocatable volume that can hold 1500MiB)
-func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
-	roundedUp := volumeSizeBytes / allocationUnitBytes
-	if volumeSizeBytes%allocationUnitBytes > 0 {
-		roundedUp++
-	}
-	return roundedUp
 }
