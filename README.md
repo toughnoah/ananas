@@ -26,3 +26,6 @@ kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy
 kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/statefulset.yaml
 kubectl create -f https://github.com/toughnoah/ananas/blob/main/deploy/test-pod.yaml
 ```
+
+## Notice
+Knowing ananas is a csi project merely for study, it supports basic csi functions for now.
