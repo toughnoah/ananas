@@ -1,7 +1,7 @@
 kind: StatefulSet
 apiVersion: apps/v1
 metadata:
-  name: csi-do-controller
+  name: csi-ananas-controller
   namespace: ananas
 spec:
   serviceName: "csi-ananas"
@@ -50,32 +50,10 @@ spec:
             - name: ADDRESS
               value: /csi/csi.sock
         - name: csi-ananas
-        - name: csi-ananas
           image: toughnoah/ananas:v1.0
           args :
-            - "--client_id=$(CLIENT_ID)"
-            - "--client_secret=$(CLIENT_SECRET)"
-            - "--client_tenant=$(CLIENT_TENANT)"
-            - "--subscription_id=$(SUBSCRIPTION_ID)"
-            - "--resource_group=$(RESOURCE_GROUP)"
-            - "--endpoint=$(CSI_ENDPOINT)"
             - "--node=$(KUBE_NODE_NAME)"
           env:
-            - name: CSI_ENDPOINT
-              value: unix:///csi/csi.sock
-            - name: CLIENT_ID
-              value:
-            - name: CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: ananas
-                  key: client_secret
-            - name: CLIENT_TENANT
-              value:
-            - name: SUBSCRIPTION_ID
-              value:
-            - name: RESOURCE_GROUP
-              value:
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -85,6 +63,12 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
+            - name: cloud-config-dir
+              mountPath: /etc/kubernetes
       volumes:
         - name: socket-dir
           emptyDir: {}
+        - name: cloud-config-dir
+          hostPath:
+            path: /etc/kubernetes
+            type: Directory

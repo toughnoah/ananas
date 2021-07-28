@@ -61,8 +61,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
+						// this is used for pv nodeAffinity, at lease to have one
 						"location": d.az.Location,
-						"diskUri":  diskUri,
+						//"diskUri":  diskUri,
 					},
 				},
 			},
