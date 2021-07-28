@@ -5,6 +5,28 @@ import (
 	"sync"
 )
 
+const (
+	_   = iota
+	KiB = 1 << (10 * iota)
+	MiB
+	GiB
+	TiB
+)
+
+const (
+	// MinimumVolumeSizeInBytes minimumVolumeSizeInBytes is used to validate that the user is not trying
+	// to create a volume that is smaller than what we support
+	MinimumVolumeSizeInBytes int64 = 1 * GiB
+
+	// MaximumVolumeSizeInBytes maximumVolumeSizeInBytes is used to validate that the user is not trying
+	// to create a volume that is larger than what we support
+	MaximumVolumeSizeInBytes int64 = 64 * GiB
+
+	// DefaultVolumeSizeInBytes defaultVolumeSizeInBytes is used when the user did not provide a size or
+	// the size they provided did not satisfy our requirements
+	DefaultVolumeSizeInBytes int64 = 32 * GiB
+)
+
 type VolumeLocks struct {
 	locks sets.String
 	mux   sync.Mutex
@@ -30,4 +52,33 @@ func (vl *VolumeLocks) Release(volumeID string) {
 	vl.mux.Lock()
 	defer vl.mux.Unlock()
 	vl.locks.Delete(volumeID)
+}
+
+// BytesToGiB conversts Bytes to GiB
+func BytesToGiB(volumeSizeBytes int64) int64 {
+	return volumeSizeBytes / GiB
+}
+
+// GiBToBytes converts GiB to Bytes
+func GiBToBytes(volumeSizeGiB int64) int64 {
+	return volumeSizeGiB * GiB
+}
+
+// RoundUpGiB rounds up the volume size in bytes upto multiplications of GiB
+// in the unit of GiB
+func RoundUpGiB(volumeSizeBytes int64) int64 {
+	return roundUpSize(volumeSizeBytes, GiB)
+}
+
+// roundUpSize calculates how many allocation units are needed to accommodate
+// a volume of given size. E.g. when user wants 1500MiB volume, while AWS EBS
+// allocates volumes in gibibyte-sized chunks,
+// RoundUpSize(1500 * 1024*1024, 1024*1024*1024) returns '2'
+// (2 GiB is the smallest allocatable volume that can hold 1500MiB)
+func roundUpSize(volumeSizeBytes int64, allocationUnitBytes int64) int64 {
+	roundedUp := volumeSizeBytes / allocationUnitBytes
+	if volumeSizeBytes%allocationUnitBytes > 0 {
+		roundedUp++
+	}
+	return roundedUp
 }

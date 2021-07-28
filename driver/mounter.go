@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"k8s.io/klog/v2"
 	utilexec "k8s.io/utils/exec"
@@ -22,9 +21,10 @@ const (
 	blkidExitStatusNoIdentifiers = 2
 )
 
-var _ IoHandler = &osIOHandler{}
-
-var _ Mounter = &mounter{}
+var (
+	_ IoHandler = &osIOHandler{}
+	_ Mounter   = &mounter{}
+)
 
 func findDiskByLun(lun int, io IoHandler, exec utilexec.Interface) (string, error) {
 	azureDisks := listAzureDiskPath(io)
@@ -197,13 +197,13 @@ func (handler *osIOHandler) ReadFile(filename string) ([]byte, error) {
 	return ioutil.ReadFile(filename)
 }
 
-type volumeStatistics struct {
-	//availableBytes,
-	totalBytes int64
-	//usedBytes    int64
-	//availableInodes,
-	//totalInodes,
-	//usedInodes int64
+type VolumeStatistics struct {
+	AvailableBytes,
+	TotalBytes int64
+	UsedBytes int64
+	AvailableInodes,
+	TotalInodes,
+	UsedInodes int64
 }
 
 type Mounter interface {
@@ -229,18 +229,15 @@ type Mounter interface {
 
 	// GetStatistics returns capacity-related volume statistics for the given
 	// volume path.
-	GetStatistics(volumePath string) (volumeStatistics, error)
+	GetStatistics(volumePath string) (VolumeStatistics, error)
 }
 
-// newMounter returns a new mounter instance
-func newMounter(log *logrus.Entry) *mounter {
-	return &mounter{
-		log: log,
-	}
+// NewMounter returns a new mounter instance
+func NewMounter() *mounter {
+	return &mounter{}
 }
 
 type mounter struct {
-	log *logrus.Entry
 }
 
 func (m *mounter) Format(source, fsType string) error {
@@ -268,11 +265,6 @@ func (m *mounter) Format(source, fsType string) error {
 	if fsType == "ext4" || fsType == "ext3" {
 		mkfsArgs = []string{"-F", source}
 	}
-
-	m.log.WithFields(logrus.Fields{
-		"cmd":  mkfsCmd,
-		"args": mkfsArgs,
-	}).Info("executing format command")
 
 	out, err := exec.Command(mkfsCmd, mkfsArgs...).CombinedOutput()
 	if err != nil {
@@ -337,11 +329,6 @@ func (m *mounter) Mount(source, target, fsType string, opts ...string) error {
 	mountArgs = append(mountArgs, source)
 	mountArgs = append(mountArgs, target)
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  mountCmd,
-		"args": mountArgs,
-	}).Info("executing mount command")
-
 	out, err := exec.Command(mountCmd, mountArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("mounting failed: %v cmd: '%s %s' output: %q",
@@ -358,11 +345,6 @@ func (m *mounter) Unmount(target string) error {
 	}
 
 	umountArgs := []string{target}
-
-	m.log.WithFields(logrus.Fields{
-		"cmd":  umountCmd,
-		"args": umountArgs,
-	}).Info("executing umount command")
 
 	out, err := exec.Command(umountCmd, umountArgs...).CombinedOutput()
 	if err != nil {
@@ -388,11 +370,6 @@ func (m *mounter) IsFormatted(source string) (bool, error) {
 	}
 
 	blkidArgs := []string{source}
-
-	m.log.WithFields(logrus.Fields{
-		"cmd":  blkidCmd,
-		"args": blkidArgs,
-	}).Info("checking if source is formatted")
 
 	exitCode := 0
 	cmd := exec.Command(blkidCmd, blkidArgs...)
@@ -429,18 +406,12 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 	// this is quite different from the host, -M means mountpoint, -J means formant output to json
 	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", target, "-J"}
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  findmntCmd,
-		"args": findmntArgs,
-	}).Info("checking if target is mounted")
-
 	out, err := exec.Command(findmntCmd, findmntArgs...).CombinedOutput()
 	if err != nil {
 		// findmnt exits with non zero exit status if it couldn't find anything
 		if strings.TrimSpace(string(out)) == "" {
 			return false, nil
 		}
-
 		return false, fmt.Errorf("checking mounted failed: %v cmd: %q output: %q",
 			err, findmntCmd, string(out))
 	}
@@ -477,19 +448,19 @@ func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (stri
 	return devicePath, err
 }
 
-func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {
+func (m *mounter) GetStatistics(volumePath string) (VolumeStatistics, error) {
 	// See http://man7.org/linux/man-pages/man8/blockdev.8.html for details
 	output, err := exec.Command("blockdev", "getsize64", volumePath).CombinedOutput()
 	if err != nil {
-		return volumeStatistics{}, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", volumePath, string(output), err)
+		return VolumeStatistics{}, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", volumePath, string(output), err)
 	}
 	strOut := strings.TrimSpace(string(output))
 	gotSizeBytes, err := strconv.ParseInt(strOut, 10, 64)
 	if err != nil {
-		return volumeStatistics{}, fmt.Errorf("failed to parse size %s into int", strOut)
+		return VolumeStatistics{}, fmt.Errorf("failed to parse size %s into int", strOut)
 	}
 
-	return volumeStatistics{
-		totalBytes: gotSizeBytes,
+	return VolumeStatistics{
+		TotalBytes: gotSizeBytes,
 	}, nil
 }

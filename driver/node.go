@@ -72,12 +72,19 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	d.log.WithFields(logrus.Fields{
+		"cmd":         "blkid",
+		"device path": devPath,
+	}).Info("checking if source is formatted")
 	formatted, err := d.mounter.IsFormatted(devPath)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if !formatted {
-		log.Info("formatting the volume for staging")
+		d.log.WithFields(logrus.Fields{
+			"cmd":  "mkfs",
+			"args": fsType,
+		}).Info("executing format command")
 		if err := d.mounter.Format(devPath, fsType); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -100,15 +107,9 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	if len(volumeID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID not provided")
+	if err := ValidateValidateNodeUnStageVolumeRequest(volumeID, req); err != nil {
+		return nil, err
 	}
-
-	stagingTargetPath := req.GetStagingTargetPath()
-	if len(stagingTargetPath) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
-	}
-
 	if acquired := d.volumeLocks.TryAcquire(volumeID); !acquired {
 		return nil, status.Errorf(codes.Aborted, "An operation with the given Volume ID %s already exists", volumeID)
 	}
@@ -120,13 +121,20 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	})
 	log.Info("node unstage volume called")
 
+	d.log.WithFields(logrus.Fields{
+		"cmd":                 "findmnt",
+		"staging_target_path": req.StagingTargetPath,
+	}).Info("checking if target is mounted")
 	mounted, err := d.mounter.IsMounted(req.StagingTargetPath)
 	if err != nil {
 		return nil, err
 	}
 
 	if mounted {
-		log.Info("unmounting the staging target path")
+		d.log.WithFields(logrus.Fields{
+			"cmd":  "umount",
+			"args": req.StagingTargetPath,
+		}).Info("executing umount command")
 		err = d.mounter.Unmount(req.StagingTargetPath)
 		if err != nil {
 			return nil, err
@@ -193,19 +201,30 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	})
 	log.Info("node unpublish volume called")
 
+	d.log.WithFields(logrus.Fields{
+		"volume_id":           req.VolumeId,
+		"staging_target_path": req.TargetPath,
+	}).Info("checking if target is mounted")
 	mounted, err := d.mounter.IsMounted(req.TargetPath)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, "Failed to check mount point")
 	}
 
 	if mounted {
-		log.Info("unmounting the target path")
+		d.log.WithFields(logrus.Fields{
+			"cmd":  "umount",
+			"args": req.TargetPath,
+		}).Info("executing umount command")
 		err := d.mounter.Unmount(req.TargetPath)
 		if err != nil {
-			return nil, err
+			return nil, status.Error(codes.Internal, "Failed to unmout target path")
 		}
 	} else {
 		log.Info("target path is already unmounted")
+	}
+	_, err = os.Stat(targetPath)
+	if err == nil {
+		os.Remove(targetPath)
 	}
 
 	log.Info("unmounting volume is finished")
@@ -241,7 +260,7 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 			Usage: []*csi.VolumeUsage{
 				{
 					Unit:  csi.VolumeUsage_BYTES,
-					Total: bcap.totalBytes,
+					Total: bcap.TotalBytes,
 				},
 			},
 		}, nil
@@ -300,7 +319,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, request *csi.NodeExpandVo
 }
 
 func (d *Driver) NodeGetCapabilities(ctx context.Context, request *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	nscaps := []*csi.NodeServiceCapability{
+	caps := []*csi.NodeServiceCapability{
 		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
@@ -311,32 +330,32 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, request *csi.NodeGetCa
 		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
-					Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+					Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 				},
 			},
 		},
 		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
-					Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+					Type: csi.NodeServiceCapability_RPC_UNKNOWN,
 				},
 			},
 		},
 	}
 
 	d.log.WithFields(logrus.Fields{
-		"node_capabilities": nscaps,
+		"node_capabilities": caps,
 		"method":            "node_get_capabilities",
 	}).Info("node get capabilities called")
 	return &csi.NodeGetCapabilitiesResponse{
-		Capabilities: nscaps,
+		Capabilities: caps,
 	}, nil
 }
 
 func (d *Driver) NodeGetInfo(ctx context.Context, request *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 	return &csi.NodeGetInfoResponse{
-		NodeId:            d.az.NodeId,
+		NodeId:            d.nodeId,
 		MaxVolumesPerNode: _defaultAzureVolumeLimit,
 
 		// make sure that the driver works on this particular region only
@@ -373,7 +392,11 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	})
 
 	if !mounted {
-		log.Info("mounting the volume")
+		d.log.WithFields(logrus.Fields{
+			"cmd":    "mount",
+			"source": source,
+			"dest":   target,
+		}).Info("executing mount command")
 		if err := d.mounter.Mount(source, target, fsType, mountOptions...); err != nil {
 			return status.Error(codes.Internal, err.Error())
 		}
@@ -412,7 +435,11 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mo
 	})
 
 	if !mounted {
-		log.Info("mounting the volume")
+		d.log.WithFields(logrus.Fields{
+			"cmd":    "mount",
+			"source": source,
+			"dest":   target,
+		}).Info("executing mount command")
 		if err := d.mounter.Mount(source, target, "", mountOptions...); err != nil {
 			return status.Errorf(codes.Internal, err.Error())
 		}
