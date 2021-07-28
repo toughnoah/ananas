@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ananas-test
+  namespace: ananas
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ananas-storage
+  resources:
+    requests:
+      storage: 4Gi
