@@ -1,5 +1,5 @@
 kind: DaemonSet
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 metadata:
   name: ananas
   namespace: ananas
@@ -25,6 +25,8 @@ spec:
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
           env:
             - name: ADDRESS
               value: /csi/csi.sock
@@ -59,7 +61,7 @@ spec:
       volumes:
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/com.csi.noah.ananas
+            path: /var/lib/kubelet/plugins/ananas.noah.csi.com
             type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:
@@ -72,3 +74,7 @@ spec:
           hostPath:
             path: /etc/kubernetes
             type: Directory
+        - hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
+          name: registration-dir

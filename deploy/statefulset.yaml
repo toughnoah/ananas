@@ -5,6 +5,9 @@ metadata:
   namespace: ananas
 spec:
   serviceName: "csi-ananas"
+  selector:
+    matchLabels:
+      app: ananas
   replicas: 1
   template:
     metadata:
@@ -49,6 +52,9 @@ spec:
           env:
             - name: ADDRESS
               value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
         - name: csi-ananas
           image: toughnoah/ananas:v1.0
           args :
@@ -62,7 +68,7 @@ spec:
           imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
-              mountPath: /var/lib/csi/sockets/pluginproxy/
+              mountPath: /csi
             - name: cloud-config-dir
               mountPath: /etc/kubernetes
       volumes:
