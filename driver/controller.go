@@ -98,15 +98,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 }
 
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
-	}
-
-	if req.NodeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Node ID must be provided")
-	}
-	if req.VolumeCapability == nil {
-		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
+	if err := ValidateControllerPublishVolume(req); err != nil {
+		return nil, err
 	}
 	log := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
@@ -129,12 +122,8 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 }
 
 func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	if req.VolumeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Volume ID must be provided")
-	}
-
-	if req.NodeId == "" {
-		return nil, status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Node ID %q must be provided")
+	if err := ValidateControllerUnPublishVolume(req); err != nil {
+		return nil, err
 	}
 	log := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
