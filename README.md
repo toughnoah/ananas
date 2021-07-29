@@ -24,7 +24,7 @@ kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy
 kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/pvc.yaml
 kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/sc.yaml
 kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/statefulset.yaml
-kubectl create -f https://github.com/toughnoah/ananas/blob/main/deploy/test-pod.yaml
+kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/test-pod.yaml
 ```
 
 ## Notice
