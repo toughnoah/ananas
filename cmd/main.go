@@ -29,7 +29,6 @@ func main() {
 	}
 
 	mounter := driver.NewMounter()
-
 	drv, err := driver.NewDriver(*endpoint, *nodeId, az, mounter)
 	if err != nil {
 		log.Fatalln(err)

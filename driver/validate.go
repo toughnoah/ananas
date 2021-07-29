@@ -95,6 +95,31 @@ func ValidateValidateNodeUnStageVolumeRequest(volumeID string, req *csi.NodeUnst
 	return nil
 }
 
+func ValidateControllerPublishVolume(req *csi.ControllerPublishVolumeRequest) error {
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
+	}
+
+	if req.NodeId == "" {
+		return status.Error(codes.InvalidArgument, "ControllerPublishVolume Node ID must be provided")
+	}
+	if req.VolumeCapability == nil {
+		return status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
+	}
+	return nil
+}
+
+func ValidateControllerUnPublishVolume(req *csi.ControllerUnpublishVolumeRequest) error {
+	if req.VolumeId == "" {
+		return status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Volume ID must be provided")
+	}
+
+	if req.NodeId == "" {
+		return status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Node ID %q must be provided")
+	}
+	return nil
+}
+
 // checkDirExists checks directory  exists or not.
 func checkDirExists(p string) bool {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
