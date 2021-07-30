@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	compute2 "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	. "github.com/toughnoah/ananas/pkg"
@@ -45,7 +46,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	gbSize := RoundUpGiB(size)
 	volumeOptions := &azure.ManagedDiskOptions{
 		DiskName:           volumeName,
-		StorageAccountType: compute2.DiskStorageAccountTypes(compute.PremiumLRS),
+		StorageAccountType: compute2.PremiumLRS,
 		ResourceGroup:      d.az.ResourceGroup,
 		SizeGB:             int(gbSize),
 	}
@@ -109,9 +110,24 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	log.Info("controller publish volume called")
 	volume := req.GetVolumeId()
 	diskUri := d.GetDiskUri(volume)
-	lun, err := d.az.AttachDisk(true, volume, diskUri, types.NodeName(req.GetNodeId()), compute2.CachingTypes(compute.CachingTypesReadWrite))
+	disk := &compute2.Disk{
+		Name:     to.StringPtr(volume),
+		Location: to.StringPtr("chinaeast2"),
+		DiskProperties: &compute2.DiskProperties{
+			CreationData: &compute2.CreationData{
+				CreateOption: compute2.Empty,
+			},
+			DiskSizeGB: to.Int32Ptr(64),
+			DiskState:  compute2.DiskState(compute.DiskStateUnattached),
+		},
+		Sku: &compute2.DiskSku{
+			Name: compute2.PremiumLRS,
+		},
+	}
+
+	lun, err := d.az.AttachDisk(true, volume, diskUri, types.NodeName(req.GetNodeId()), compute2.CachingTypes(compute.CachingTypesReadWrite), disk)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 	log.Info("attach success")
 	return &csi.ControllerPublishVolumeResponse{

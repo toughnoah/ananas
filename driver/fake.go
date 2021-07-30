@@ -2,7 +2,8 @@ package driver
 
 import (
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
+	compute "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/toughnoah/ananas/pkg"
@@ -98,16 +99,32 @@ func (f *fakeMounter) GetStatistics(volumePath string) (VolumeStatistics, error)
 
 func NewFakeDisk(stdCapacityRangetest *csi.CapacityRange) compute.Disk {
 	size := int32(pkg.BytesToGiB(stdCapacityRangetest.RequiredBytes))
-	id := fmt.Sprintf(managedDiskPath, "subs", "rg", testVolumeName)
-	state := string(compute.ProvisioningStateSucceeded)
+	id := fmt.Sprintf(managedDiskPath, "subscription", "rg", testVolumeName)
 	disk := compute.Disk{
 		ID:   &id,
 		Name: &testVolumeName,
 		DiskProperties: &compute.DiskProperties{
 			DiskSizeGB:        &size,
-			ProvisioningState: &state,
+			ProvisioningState: to.StringPtr("Succeeded"),
 			DiskState:         compute.Unattached,
 		},
 	}
 	return disk
+}
+
+func NewFakeVm(dataDisk []compute.DataDisk) compute.VirtualMachine {
+	Location := "chinaeast2"
+	NodeName := fakeNode
+	InstanceId := "/subscriptions/subscription/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/noah-test-node"
+	vm := compute.VirtualMachine{
+		Name:     &NodeName,
+		ID:       &InstanceId,
+		Location: &Location,
+		VirtualMachineProperties: &compute.VirtualMachineProperties{
+			StorageProfile: &compute.StorageProfile{
+				DataDisks: &dataDisk,
+			},
+		},
+	}
+	return vm
 }
