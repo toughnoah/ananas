@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	_volumeModeBlock         = "block"
-	_volumeModeFilesystem    = "filesystem"
-	_defaultAzureVolumeLimit = 16
+	_volumeModeBlock            = "block"
+	_volumeModeFilesystem       = "filesystem"
+	_defaultMaxAzureVolumeLimit = 16
 )
 
 func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
@@ -185,15 +185,10 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 }
 
 func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	targetPath := req.GetTargetPath()
-	volumeID := req.GetVolumeId()
+	if err := ValidateNodeUnPublishVolume(req); err != nil {
+		return nil, err
+	}
 
-	if len(volumeID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
-	}
-	if len(targetPath) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
-	}
 	log := d.log.WithFields(logrus.Fields{
 		"volume_id":   req.VolumeId,
 		"target_path": req.TargetPath,
@@ -222,9 +217,12 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	} else {
 		log.Info("target path is already unmounted")
 	}
-	_, err = os.Stat(targetPath)
+	_, err = os.Stat(req.TargetPath)
 	if err == nil {
-		os.Remove(targetPath)
+		err := os.Remove(req.TargetPath)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	log.Info("unmounting volume is finished")
@@ -356,7 +354,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, request *csi.NodeGetInfoReques
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 	return &csi.NodeGetInfoResponse{
 		NodeId:            d.nodeId,
-		MaxVolumesPerNode: _defaultAzureVolumeLimit,
+		MaxVolumesPerNode: _defaultMaxAzureVolumeLimit,
 
 		// make sure that the driver works on this particular region only
 		AccessibleTopology: &csi.Topology{
@@ -377,6 +375,11 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	fsType := "ext4"
 	if mnt.FsType != "" {
 		fsType = mnt.FsType
+	}
+	// should check path whether it is exist
+	err := os.MkdirAll(target, 0o750)
+	if err != nil {
+		return status.Error(codes.Internal, err.Error())
 	}
 
 	mounted, err := d.mounter.IsMounted(target)
@@ -422,6 +425,12 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mo
 	}
 
 	target := req.TargetPath
+	// should check device whether it is exist
+	pathFile, e := os.OpenFile(target, os.O_CREATE|os.O_RDWR, 0o750)
+	if e != nil {
+		return status.Error(codes.Internal, e.Error())
+	}
+	defer pathFile.Close()
 
 	mounted, err := d.mounter.IsMounted(target)
 	if err != nil {

@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	compute2 "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
@@ -32,6 +33,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("size: %d\n", size)
 	volumeName := req.Name
 	log := d.log.WithFields(logrus.Fields{
 		"volume_name":         volumeName,
@@ -44,20 +46,10 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	// get volume first, if it's created do no thing
 	// create logic
 	gbSize := RoundUpGiB(size)
-	volumeOptions := &azure.ManagedDiskOptions{
-		DiskName:           volumeName,
-		StorageAccountType: compute2.PremiumLRS,
-		ResourceGroup:      d.az.ResourceGroup,
-		SizeGB:             int(gbSize),
-	}
-	diskUri, err := d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      req.Name,
+			VolumeId:      volumeName,
 			CapacityBytes: size,
 			AccessibleTopology: []*csi.Topology{
 				{
@@ -68,9 +60,28 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 					},
 				},
 			},
-			VolumeContext: map[string]string{},
 		},
 	}
+
+	disk, rerr := d.az.DisksClient.Get(ctx, d.az.ResourceGroup, volumeName)
+	if rerr == nil {
+		if *disk.DiskSizeGB != int32(gbSize) {
+			return nil, status.Error(codes.AlreadyExists, "disk already exits")
+		}
+		return resp, nil
+	}
+
+	volumeOptions := &azure.ManagedDiskOptions{
+		DiskName:           *disk.Name,
+		StorageAccountType: compute2.PremiumLRS,
+		ResourceGroup:      d.az.ResourceGroup,
+		SizeGB:             int(gbSize),
+	}
+	diskUri, err := d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	log.WithField("response", diskUri).Info("volume was created")
 	return resp, nil
 
@@ -102,13 +113,20 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	if err := ValidateControllerPublishVolume(req); err != nil {
 		return nil, err
 	}
+
+	resourceGroup := d.az.ResourceGroup
 	log := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
 		"node_id":   req.NodeId,
 		"method":    "controller_publish_volume",
 	})
 	log.Info("controller publish volume called")
+	//should failed when volume does not exist
 	volume := req.GetVolumeId()
+	_, _, err := d.az.ManagedDiskController.GetDisk(d.az.ResourceGroup, volume)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
 	diskUri := d.GetDiskUri(volume)
 	disk := &compute2.Disk{
 		Name:     to.StringPtr(volume),
@@ -123,6 +141,15 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		Sku: &compute2.DiskSku{
 			Name: compute2.PremiumLRS,
 		},
+	}
+	// should failed while can not find the vm
+	vm, rErr := d.az.VirtualMachinesClient.Get(ctx, resourceGroup, req.NodeId, compute2.InstanceViewTypes(compute.InstanceViewTypesInstanceView))
+	if rErr != nil {
+		return nil, status.Error(codes.NotFound, rErr.RawError.Error())
+	}
+	// should failed if reach the max volume limit on node
+	if len(*vm.StorageProfile.DataDisks) > _defaultMaxAzureVolumeLimit {
+		return nil, status.Error(codes.ResourceExhausted, errors.New("reach max volume limit on node").Error())
 	}
 
 	lun, err := d.az.AttachDisk(true, volume, diskUri, types.NodeName(req.GetNodeId()), compute2.CachingTypes(compute.CachingTypesReadWrite), disk)
@@ -176,9 +203,9 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	log.Info("validate volume capabilities called")
 
 	// check if volume exist before trying to validate it it
-	_, _, err := d.az.GetDisk(d.az.ResourceGroup, req.GetVolumeId())
+	_, _, err := d.az.ManagedDiskController.GetDisk(d.az.ResourceGroup, req.GetVolumeId())
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.NotFound, err.Error())
 	}
 	// if it's not supported (i.e: wrong region), we shouldn't override it
 	resp := &csi.ValidateVolumeCapabilitiesResponse{

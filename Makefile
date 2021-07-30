@@ -22,3 +22,7 @@ install:
 docker:
 	@docker build -t toughnoah/ananas:$(IMG_VER) ./$(BUILD_PATH)
 	@docker push toughnoah/ananas:$(IMG_VER)
+
+.PHONY: test
+test:
+	@go test ./... -v -coverprofile=cover.out -ginkgo.v
