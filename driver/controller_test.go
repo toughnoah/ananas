@@ -3,15 +3,14 @@ package driver
 import (
 	"context"
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
-	"github.com/bouk/monkey"
+	"github.com/Azure/go-autorest/autorest/azure"
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/toughnoah/ananas/pkg"
-	"k8s.io/apimachinery/pkg/types"
-	"reflect"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/diskclient/mockdiskclient"
-	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/vmclient/mockvmclient"
 	"testing"
 )
 
@@ -35,13 +34,13 @@ func TestCreateVolume(t *testing.T) {
 					CapacityRange:      stdCapacityRangetest,
 				}
 				disk := NewFakeDisk(stdCapacityRangetest)
-				d.GetCloud().DisksClient.(*mockdiskclient.MockInterface).EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(disk, nil).AnyTimes()
-				d.GetCloud().DisksClient.(*mockdiskclient.MockInterface).EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				testCloud := d.GetCloud()
+				mockDisksClient := testCloud.DisksClient.(*mockdiskclient.MockInterface)
+				//disk := getTestDisk(test.diskName)
+				mockDisksClient.EXPECT().CreateOrUpdate(gomock.Any(), testCloud.ResourceGroup, testVolumeName, gomock.Any()).Return(nil).AnyTimes()
+				mockDisksClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, testVolumeName).Return(disk, nil).AnyTimes()
 				_, err = d.CreateVolume(context.Background(), req)
-				expectedErr := error(nil)
-				if !reflect.DeepEqual(err, expectedErr) {
-					t.Errorf("actualErr: (%v), expectedErr: (%v)", err, expectedErr)
-				}
+				require.NoError(t, err)
 			},
 		},
 	}
@@ -50,16 +49,41 @@ func TestCreateVolume(t *testing.T) {
 	}
 }
 
-func TestPublishVolume(t *testing.T) {
-	d, _ := NewFakeDriver(t)
-	monkey.PatchInstanceMethod(reflect.TypeOf(d.az), "AttachDisk", func(_ *azure.Cloud, isManagedDisk bool, diskName, diskURI string, nodeName types.NodeName, cachingMode compute.CachingTypes) (int32, error) {
-		return 1, nil
-	})
-	req := &csi.ControllerPublishVolumeRequest{
-		VolumeId:         "testVolumeID",
+func TestControllerPublishVolume(t *testing.T) {
+	d, err := NewFakeDriver(t)
+	require.NoError(t, err)
+	dataDisk := make([]compute.DataDisk, 0)
+	vm := NewFakeVm(dataDisk)
+	mockVMsClient := d.GetCloud().VirtualMachinesClient.(*mockvmclient.MockInterface)
+	mockVMsClient.EXPECT().Get(gomock.Any(), d.GetCloud().ResourceGroup, fakeNode, gomock.Any()).Return(vm, nil).AnyTimes()
+	mockVMsClient.EXPECT().Update(gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(&azure.Future{}, nil).AnyTimes()
+	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any()).Return(nil).AnyTimes()
+	req2 := &csi.ControllerPublishVolumeRequest{
+		VolumeId:         testVolumeName,
 		VolumeCapability: &csi.VolumeCapability{AccessMode: &csi.VolumeCapability_AccessMode{Mode: 2}},
 		NodeId:           fakeNode,
 	}
-	_, err := d.ControllerPublishVolume(context.Background(), req)
+	_, err = d.ControllerPublishVolume(context.Background(), req2)
+	require.NoError(t, err)
+}
+
+func TestControllerUnPublishVolume(t *testing.T) {
+	dataDisk := make([]compute.DataDisk, 0)
+	dataDisk = append(dataDisk, compute.DataDisk{Name: to.StringPtr(testVolumeName)})
+	vm := NewFakeVm(dataDisk)
+	d, err := NewFakeDriver(t)
+	require.NoError(t, err)
+	testCloud := d.GetCloud()
+	mockVMsClient := testCloud.VirtualMachinesClient.(*mockvmclient.MockInterface)
+	mockVMsClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, fakeNode, gomock.Any()).Return(vm, nil).AnyTimes()
+	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(&azure.Future{}, nil).AnyTimes()
+	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), testCloud.ResourceGroup, gomock.Any()).Return(nil).AnyTimes()
+	req := &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: testVolumeName,
+		NodeId:   fakeNode,
+	}
+	_, err = d.ControllerUnpublishVolume(context.Background(), req)
 	require.NoError(t, err)
 }

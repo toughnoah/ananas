@@ -16,7 +16,7 @@ install:
 	@export GO111MODULE=on
 	@export GOPROXY=$(GOPROXYADDR)
 	@go mod tidy
-	@go build -o $(BUILD_PATH)/ananas $(BUILD_PATH)/ananas.go
+	@go build -o $(BUILD_PATH)/ananas $(BUILD_PATH)/main.go
 
 .PHONY: docker
 docker:
