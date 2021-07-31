@@ -44,7 +44,9 @@ func NewFakeDriver(t *testing.T) (*Driver, error) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	fakeAz := azure.GetTestCloud(ctrl)
-	fakeMnt := &fakeMounter{}
+	fakeMnt := &fakeMounter{
+		mounted: make(map[string]string),
+	}
 	return NewDriver(FakeEndPoint, fakeNode, fakeAz, fakeMnt)
 }
 
@@ -112,7 +114,7 @@ func NewFakeDisk(stdCapacityRangetest *csi.CapacityRange) compute.Disk {
 	return disk
 }
 
-func NewFakeVm(dataDisk []compute.DataDisk) compute.VirtualMachine {
+func NewFakeVm(dataDisk []compute.DataDisk) *compute.VirtualMachine {
 	Location := "chinaeast2"
 	NodeName := fakeNode
 	InstanceId := "/subscriptions/subscription/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/noah-test-node"
@@ -126,5 +128,5 @@ func NewFakeVm(dataDisk []compute.DataDisk) compute.VirtualMachine {
 			},
 		},
 	}
-	return vm
+	return &vm
 }

@@ -120,6 +120,16 @@ func ValidateControllerUnPublishVolume(req *csi.ControllerUnpublishVolumeRequest
 	return nil
 }
 
+func ValidateNodeUnPublishVolume(req *csi.NodeUnpublishVolumeRequest) error {
+	if len(req.VolumeId) == 0 {
+		return status.Error(codes.InvalidArgument, "Volume ID missing in request")
+	}
+	if len(req.TargetPath) == 0 {
+		return status.Error(codes.InvalidArgument, "Target path missing in request")
+	}
+	return nil
+}
+
 // checkDirExists checks directory  exists or not.
 func checkDirExists(p string) bool {
 	if _, err := os.Stat(p); os.IsNotExist(err) {

@@ -20,11 +20,11 @@ const (
 
 	// MaximumVolumeSizeInBytes maximumVolumeSizeInBytes is used to validate that the user is not trying
 	// to create a volume that is larger than what we support
-	MaximumVolumeSizeInBytes int64 = 64 * GiB
+	MaximumVolumeSizeInBytes int64 = 1 * TiB
 
 	// DefaultVolumeSizeInBytes defaultVolumeSizeInBytes is used when the user did not provide a size or
 	// the size they provided did not satisfy our requirements
-	DefaultVolumeSizeInBytes int64 = 32 * GiB
+	DefaultVolumeSizeInBytes int64 = 10 * GiB
 )
 
 type VolumeLocks struct {
