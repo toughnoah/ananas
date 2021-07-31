@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// ValidateCreateVolume validates the create volume request.
 func ValidateCreateVolume(req *csi.CreateVolumeRequest) (int64, error) {
 	if req.Name == "" {
 		return 0, status.Error(codes.InvalidArgument, "CreateVolume Name must be provided")
@@ -54,6 +55,7 @@ func ValidateNodeStageVolumeRequest(req *csi.NodeStageVolumeRequest) error {
 	return nil
 }
 
+// ValidateNodePublishVolumeRequest validates the node publish volume request.
 func ValidateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 	if req.GetVolumeCapability() == nil {
 		return status.Error(codes.InvalidArgument, "volume capability missing in request")
@@ -82,6 +84,7 @@ func ValidateNodePublishVolumeRequest(req *csi.NodePublishVolumeRequest) error {
 	return nil
 }
 
+// ValidateValidateNodeUnStageVolumeRequest validates the node unstage volume request.
 func ValidateValidateNodeUnStageVolumeRequest(volumeID string, req *csi.NodeUnstageVolumeRequest) error {
 
 	if len(volumeID) == 0 {
@@ -95,6 +98,7 @@ func ValidateValidateNodeUnStageVolumeRequest(volumeID string, req *csi.NodeUnst
 	return nil
 }
 
+// ValidateControllerPublishVolume validates the controller publish volume request.
 func ValidateControllerPublishVolume(req *csi.ControllerPublishVolumeRequest) error {
 	if req.VolumeId == "" {
 		return status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
@@ -109,6 +113,7 @@ func ValidateControllerPublishVolume(req *csi.ControllerPublishVolumeRequest) er
 	return nil
 }
 
+// ValidateControllerUnPublishVolume validates the controller unpublish volume request.
 func ValidateControllerUnPublishVolume(req *csi.ControllerUnpublishVolumeRequest) error {
 	if req.VolumeId == "" {
 		return status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Volume ID must be provided")
@@ -120,6 +125,7 @@ func ValidateControllerUnPublishVolume(req *csi.ControllerUnpublishVolumeRequest
 	return nil
 }
 
+// ValidateNodeUnPublishVolume validates the node unpublish volume request.
 func ValidateNodeUnPublishVolume(req *csi.NodeUnpublishVolumeRequest) error {
 	if len(req.VolumeId) == 0 {
 		return status.Error(codes.InvalidArgument, "Volume ID missing in request")

@@ -27,6 +27,7 @@ const (
 //   csi.NodeServer
 //
 
+// Driver CSI Driver
 type Driver struct {
 	name        string
 	az          *azure.Cloud
@@ -56,6 +57,7 @@ func NewDriver(ep, nodeId string, az *azure.Cloud, mounter Mounter) (*Driver, er
 	}, nil
 }
 
+// Run starts grpc server
 func (d *Driver) Run(ctx context.Context) error {
 	var eg errgroup.Group
 	// log response errors for better observability
@@ -101,10 +103,12 @@ func (d *Driver) Run(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// GetCloud gets azure cloud
 func (d *Driver) GetCloud() *azure.Cloud {
 	return d.az
 }
 
+// SetLog sets driver log obj
 func (d *Driver) SetLog(log *logrus.Entry) {
 	d.log = log
 }
