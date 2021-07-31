@@ -54,11 +54,19 @@ func TestControllerPublishVolume(t *testing.T) {
 	require.NoError(t, err)
 	dataDisk := make([]compute.DataDisk, 0)
 	vm := NewFakeVm(dataDisk)
-	mockVMsClient := d.GetCloud().VirtualMachinesClient.(*mockvmclient.MockInterface)
-	mockVMsClient.EXPECT().Get(gomock.Any(), d.GetCloud().ResourceGroup, fakeNode, gomock.Any()).Return(vm, nil).AnyTimes()
-	mockVMsClient.EXPECT().Update(gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(&azure.Future{}, nil).AnyTimes()
-	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), d.GetCloud().ResourceGroup, gomock.Any()).Return(nil).AnyTimes()
+	testCloud := d.GetCloud()
+	stdCapacityRangetest := &csi.CapacityRange{
+		RequiredBytes: pkg.GiBToBytes(10),
+		LimitBytes:    pkg.GiBToBytes(15),
+	}
+	disk := NewFakeDisk(stdCapacityRangetest)
+	mockDisksClient := testCloud.DisksClient.(*mockdiskclient.MockInterface)
+	mockDisksClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, testVolumeName).Return(disk, nil).AnyTimes()
+	mockVMsClient := testCloud.VirtualMachinesClient.(*mockvmclient.MockInterface)
+	mockVMsClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, fakeNode, gomock.Any()).Return(*vm, nil).AnyTimes()
+	mockVMsClient.EXPECT().Update(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(&azure.Future{}, nil).AnyTimes()
+	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), testCloud.ResourceGroup, gomock.Any()).Return(nil).AnyTimes()
 	req2 := &csi.ControllerPublishVolumeRequest{
 		VolumeId:         testVolumeName,
 		VolumeCapability: &csi.VolumeCapability{AccessMode: &csi.VolumeCapability_AccessMode{Mode: 2}},
@@ -76,7 +84,7 @@ func TestControllerUnPublishVolume(t *testing.T) {
 	require.NoError(t, err)
 	testCloud := d.GetCloud()
 	mockVMsClient := testCloud.VirtualMachinesClient.(*mockvmclient.MockInterface)
-	mockVMsClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, fakeNode, gomock.Any()).Return(vm, nil).AnyTimes()
+	mockVMsClient.EXPECT().Get(gomock.Any(), testCloud.ResourceGroup, fakeNode, gomock.Any()).Return(*vm, nil).AnyTimes()
 	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(&azure.Future{}, nil).AnyTimes()
 	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), testCloud.ResourceGroup, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), testCloud.ResourceGroup, gomock.Any()).Return(nil).AnyTimes()

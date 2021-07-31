@@ -10,8 +10,6 @@ require (
 	github.com/container-storage-interface/spec v1.5.0
 	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.4.3
-	github.com/golangplus/bytes v1.0.0 // indirect
-	github.com/golangplus/testing v1.0.0
 	github.com/google/uuid v1.1.2
 	github.com/kubernetes-csi/csi-test/v4 v4.2.0
 	github.com/sirupsen/logrus v1.8.1
@@ -20,6 +18,7 @@ require (
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
 	google.golang.org/grpc v1.39.0
 	k8s.io/apimachinery v0.22.0-alpha.0.0.20210417144234-8daf28983e6e
+	k8s.io/cloud-provider v0.21.0
 	k8s.io/klog/v2 v2.8.0
 	k8s.io/kubernetes v1.21.3
 	k8s.io/utils v0.0.0-20210709001253-0e1f9d693477
