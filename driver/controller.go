@@ -28,6 +28,7 @@ var (
 	}
 )
 
+// CreateVolume call azure api to create managed disk
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	size, err := ValidateCreateVolume(req)
 	if err != nil {
@@ -87,6 +88,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 }
 
+// DeleteVolume  call azure api to delete managed disk
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 
 	if req.VolumeId == "" {
@@ -109,6 +111,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
+// ControllerPublishVolume call azure api to attach azure-disk to specified vm
 func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	if err := ValidateControllerPublishVolume(req); err != nil {
 		return nil, err
@@ -164,6 +167,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}, nil
 }
 
+// ControllerUnpublishVolume call azure api to detach azure-disk from specified vm
 func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	if err := ValidateControllerUnPublishVolume(req); err != nil {
 		return nil, err
@@ -185,6 +189,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
+// ValidateVolumeCapabilities validate VolumeCapability
 func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities Volume ID must be provided")
@@ -222,14 +227,17 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	return resp, nil
 }
 
+// ListVolumes should list resource by resource group with pagination or list pv from k8s cluster
 func (d *Driver) ListVolumes(ctx context.Context, request *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
 	panic("implement me")
 }
 
+// GetCapacity returns the capacity of the storage pool
 func (d *Driver) GetCapacity(ctx context.Context, request *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 	panic("implement me")
 }
 
+// ControllerGetCapabilities returns the capabilities of the controller service.
 func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
 	newCap := func(cap csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
 		return &csi.ControllerServiceCapability{
@@ -263,26 +271,39 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 	return resp, nil
 }
 
+// CreateSnapshot will be called by the CO to create a new snapshot from a
+// source volume on behalf of a user.
 func (d *Driver) CreateSnapshot(ctx context.Context, request *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
 	panic("implement me")
 }
 
+// DeleteSnapshot will be called by the CO to delete a snapshot.
 func (d *Driver) DeleteSnapshot(ctx context.Context, request *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
 	panic("implement me")
 }
 
+// ListSnapshots returns the information about all snapshots on the storage
+// system within the given parameters regardless of how they were created.
+// ListSnapshots shold not list a snapshot that is being created but has not
+// been cut successfully yet.
 func (d *Driver) ListSnapshots(ctx context.Context, request *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 	panic("implement me")
 }
 
+// ControllerExpandVolume is called from the resizer to increase the volume size.
 func (d *Driver) ControllerExpandVolume(ctx context.Context, request *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	panic("implement me")
 }
 
+// ControllerGetVolume gets a specific volume.
+// The call is used for the CSI health check feature
+// (https://github.com/kubernetes/enhancements/pull/1077) which we do not
+// support yet.
 func (d *Driver) ControllerGetVolume(ctx context.Context, request *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 	panic("implement me")
 }
 
+// GetDiskUri use to get azure disk uri from volume
 func (d *Driver) GetDiskUri(volume string) string {
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/disks/%s", d.az.SubscriptionID, d.az.ResourceGroup, volume)
 }

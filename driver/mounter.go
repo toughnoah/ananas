@@ -165,6 +165,7 @@ func getDiskLinkByDevName(io IoHandler, devLinkPath, devName string) (string, er
 	return "", fmt.Errorf("read %s error: %v", devLinkPath, err)
 }
 
+// IoHandler for system operations
 type IoHandler interface {
 	ReadDir(dirname string) ([]os.FileInfo, error)
 	WriteFile(filename string, data []byte, perm os.FileMode) error
@@ -206,6 +207,7 @@ type VolumeStatistics struct {
 	UsedInodes int64
 }
 
+// Mounter for mounting operations
 type Mounter interface {
 	// Format formats the source with the given filesystem type
 	Format(source, fsType string) error

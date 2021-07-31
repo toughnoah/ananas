@@ -20,6 +20,11 @@ const (
 	_defaultMaxAzureVolumeLimit = 16
 )
 
+// NodeStageVolume mounts the volume to a staging path on the node. This is
+// called by the CO before NodePublishVolume and is used to temporary mount the
+// volume to a staging path. Once mounted, NodePublishVolume will make sure to
+// mount it to the appropriate path
+// staging path always is a directory
 func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 
 	if err := ValidateNodeStageVolumeRequest(req); err != nil {
@@ -105,6 +110,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 }
 
+// NodeUnstageVolume unstages the volume from the staging path
 func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
 	if err := ValidateValidateNodeUnStageVolumeRequest(volumeID, req); err != nil {
@@ -148,6 +154,7 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
+// NodePublishVolume mounts the volume mounted to the staging path to the target path
 func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	var err error
 	if err = ValidateNodePublishVolumeRequest(req); err != nil {
@@ -184,6 +191,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
+// NodeUnpublishVolume unmounts the volume from the target path
 func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 	if err := ValidateNodeUnPublishVolume(req); err != nil {
 		return nil, err
@@ -229,6 +237,8 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
+// NodeGetVolumeStats returns the volume capacity statistics available for the
+// the given volume.
 func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
 	if len(req.VolumeId) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume ID was empty")
@@ -312,10 +322,12 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 	}, nil
 }
 
+// NodeExpandVolume shoud call azure api to expand azure-disk
 func (d *Driver) NodeExpandVolume(ctx context.Context, request *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	panic("implement me")
 }
 
+// NodeGetCapabilities returns the supported capabilities of the node server
 func (d *Driver) NodeGetCapabilities(ctx context.Context, request *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	caps := []*csi.NodeServiceCapability{
 		{
@@ -350,6 +362,10 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, request *csi.NodeGetCa
 	}, nil
 }
 
+// NodeGetInfo returns the supported capabilities of the node server. This
+// should eventually return the droplet ID if possible. This is used so the CO
+// knows where to place the workload. The result of this function will be used
+// by the CO in ControllerPublishVolume.
 func (d *Driver) NodeGetInfo(ctx context.Context, request *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 	return &csi.NodeGetInfoResponse{

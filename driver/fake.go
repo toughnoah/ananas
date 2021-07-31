@@ -40,6 +40,7 @@ var (
 	testVolumeName = "noah-test-volume"
 )
 
+// NewFakeDriver use test cloud for mock
 func NewFakeDriver(t *testing.T) (*Driver, error) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -99,6 +100,7 @@ func (f *fakeMounter) GetStatistics(volumePath string) (VolumeStatistics, error)
 	}, nil
 }
 
+// NewFakeDisk return fake disk for mock
 func NewFakeDisk(stdCapacityRangetest *csi.CapacityRange) compute.Disk {
 	size := int32(pkg.BytesToGiB(stdCapacityRangetest.RequiredBytes))
 	id := fmt.Sprintf(managedDiskPath, "subscription", "rg", testVolumeName)
@@ -114,6 +116,7 @@ func NewFakeDisk(stdCapacityRangetest *csi.CapacityRange) compute.Disk {
 	return disk
 }
 
+// NewFakeVm return fake vm for mock
 func NewFakeVm(dataDisk []compute.DataDisk) *compute.VirtualMachine {
 	Location := "chinaeast2"
 	NodeName := fakeNode

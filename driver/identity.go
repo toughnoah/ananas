@@ -25,6 +25,8 @@ func (d *Driver) GetPluginInfo(context.Context, *csi.GetPluginInfoRequest) (*csi
 	}).Info("get plugin info called")
 	return resp, nil
 }
+
+// GetPluginCapabilities returns available capabilities of the plugin
 func (d *Driver) GetPluginCapabilities(context.Context, *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
 	resp := &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
@@ -60,6 +62,7 @@ func (d *Driver) GetPluginCapabilities(context.Context, *csi.GetPluginCapabiliti
 	return resp, nil
 }
 
+// Probe returns the health and readiness of the plugin
 func (d *Driver) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
 	d.log.WithField("method", "probe").Info("probe called")
 	return &csi.ProbeResponse{Ready: &wrappers.BoolValue{Value: true}}, nil
