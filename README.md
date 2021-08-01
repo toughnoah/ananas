@@ -1,6 +1,5 @@
 ![Go 1.16](https://img.shields.io/badge/Go-v1.16-blue)
 [![CI Workflow](https://github.com/toughnoah/ananas/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/toughnoah/ananas/actions/workflows/test-coverage.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/toughnoah/ananas)](https://goreportcard.com/report/github.com/toughnoah/ananas)
 [![codecov](https://codecov.io/gh/toughnoah/ananas/branch/main/graph/badge.svg?token=VFw6rwUFqY)](https://codecov.io/gh/toughnoah/ananas)
 # ananas
 Ananas is an experimental project for kubernetes CSI (Container Storage Interface) by using azure disk. Likewise, Ananas is the name of my cute british shorthair.
