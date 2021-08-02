@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshot
+metadata:
+  name: ananas-snapshot-test
+  namespace: ananas
+spec:
+  volumeSnapshotClassName: csi-ananas-snapclass
+  source:
+    persistentVolumeClaimName: ananas-test

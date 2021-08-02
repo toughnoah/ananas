@@ -3,11 +3,13 @@ package driver
 import (
 	"fmt"
 	compute "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
+	"github.com/Azure/go-autorest/autorest/date"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/mock/gomock"
 	"github.com/toughnoah/ananas/pkg"
 	"k8s.io/utils/mount"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/snapshotclient/mocksnapshotclient"
 	azure "sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"testing"
 )
@@ -48,6 +50,8 @@ func NewFakeDriver(t *testing.T) (*Driver, error) {
 	fakeMnt := &fakeMounter{
 		mounted: make(map[string]string),
 	}
+	mockSpClient := mocksnapshotclient.NewMockInterface(ctrl)
+	fakeAz.SnapshotsClient = mockSpClient
 	return NewDriver(FakeEndPoint, fakeNode, fakeAz, fakeMnt)
 }
 
@@ -132,4 +136,27 @@ func NewFakeVm(dataDisk []compute.DataDisk) *compute.VirtualMachine {
 		},
 	}
 	return &vm
+}
+
+func NewFakeSnapshot(diskId, location string) compute.Snapshot {
+	incremental := true
+	time := date.Time{}
+	snapshot := compute.Snapshot{
+		Name: to.StringPtr(testVolumeName),
+		Sku: &compute.SnapshotSku{
+			Name: compute.SnapshotStorageAccountTypesStandardLRS,
+		},
+		SnapshotProperties: &compute.SnapshotProperties{
+			CreationData: &compute.CreationData{
+				SourceURI:    &diskId,
+				CreateOption: compute.Copy,
+			},
+			Incremental:       &incremental,
+			TimeCreated:       &time,
+			ProvisioningState: to.StringPtr(string(compute.ProvisioningStateSucceeded)),
+		},
+		Location: to.StringPtr(location),
+		//},
+	}
+	return snapshot
 }

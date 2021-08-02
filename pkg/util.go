@@ -25,6 +25,9 @@ const (
 	// DefaultVolumeSizeInBytes defaultVolumeSizeInBytes is used when the user did not provide a size or
 	// the size they provided did not satisfy our requirements
 	DefaultVolumeSizeInBytes int64 = 10 * GiB
+
+	// ManagedDiskPath see https://docs.microsoft.com/en-us/rest/api/compute/disks/createorupdate#create-a-managed-disk-from-an-existing-managed-disk-in-the-same-or-different-subscription.
+	ManagedDiskPath = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/disks/%s"
 )
 
 type VolumeLocks struct {

@@ -8,6 +8,7 @@ import (
 	compute2 "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/sirupsen/logrus"
 	. "github.com/toughnoah/ananas/pkg"
 	"google.golang.org/grpc/codes"
@@ -28,13 +29,18 @@ var (
 	}
 )
 
+const (
+	sourceSnapshot = "snapshot"
+	sourceVolume   = "volume"
+)
+
 // CreateVolume call azure api to create managed disk
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+	var diskUri string
 	size, err := ValidateCreateVolume(req)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("size: %d\n", size)
 	volumeName := req.Name
 	log := d.log.WithFields(logrus.Fields{
 		"volume_name":         volumeName,
@@ -47,7 +53,6 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	// get volume first, if it's created do no thing
 	// create logic
 	gbSize := RoundUpGiB(size)
-
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volumeName,
@@ -61,9 +66,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 					},
 				},
 			},
+			ContentSource: nil,
 		},
 	}
-
 	disk, rerr := d.az.DisksClient.Get(ctx, d.az.ResourceGroup, volumeName)
 	if rerr == nil {
 		if *disk.DiskSizeGB != int32(gbSize) {
@@ -71,16 +76,59 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		return resp, nil
 	}
+	snapshotId := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
+	if len(snapshotId) != 0 {
+		_, rerr = d.az.SnapshotsClient.Get(ctx, d.az.ResourceGroup, snapshotId)
+		if rerr != nil {
+			errMsg := rerr.RawError.Error()
+			if strings.Index(rerr.RawError.Error(), "NotFound") != -1 {
+				return nil, status.Error(codes.NotFound, errMsg)
+			}
+			return nil, status.Error(codes.Internal, errMsg)
+		}
 
-	volumeOptions := &azure.ManagedDiskOptions{
-		DiskName:           *disk.Name,
-		StorageAccountType: compute2.PremiumLRS,
-		ResourceGroup:      d.az.ResourceGroup,
-		SizeGB:             int(gbSize),
-	}
-	diskUri, err := d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		volumeOptions := &azure.ManagedDiskOptions{
+			DiskName:           volumeName,
+			StorageAccountType: compute2.PremiumLRS,
+			ResourceGroup:      d.az.ResourceGroup,
+			SizeGB:             int(gbSize),
+			SourceType:         sourceSnapshot,
+			SourceResourceID:   snapshotId,
+		}
+		resp.Volume.ContentSource = &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{
+					SnapshotId: snapshotId,
+				},
+			},
+		}
+		diskUri, err = d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
+		if err != nil {
+			if strings.Index(err.Error(), "NotFound") != -1 {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+	} else {
+		volumeOptions := &azure.ManagedDiskOptions{
+			DiskName:           volumeName,
+			StorageAccountType: compute2.PremiumLRS,
+			ResourceGroup:      d.az.ResourceGroup,
+			SourceType:         sourceVolume,
+			SizeGB:             int(gbSize),
+		}
+		diskUri, err = d.az.ManagedDiskController.CreateManagedDisk(volumeOptions)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		resp.Volume.ContentSource = &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Volume{
+				Volume: &csi.VolumeContentSource_VolumeSource{
+					VolumeId: volumeName,
+				},
+			},
+		}
 	}
 
 	log.WithField("response", diskUri).Info("volume was created")
@@ -250,14 +298,14 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 	}
 
 	var caps []*csi.ControllerServiceCapability
-	for _, cap := range []csi.ControllerServiceCapability_RPC_Type{
+	for _, c := range []csi.ControllerServiceCapability_RPC_Type{
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 		//csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
-		//csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+		csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		//csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 	} {
-		caps = append(caps, newCap(cap))
+		caps = append(caps, newCap(c))
 	}
 
 	resp := &csi.ControllerGetCapabilitiesResponse{
@@ -273,13 +321,92 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 
 // CreateSnapshot will be called by the CO to create a new snapshot from a
 // source volume on behalf of a user.
-func (d *Driver) CreateSnapshot(ctx context.Context, request *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	panic("implement me")
+func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	var (
+		incremental = true
+		readyToUse  bool
+	)
+
+	if err := ValidateCreateSnapshot(req); err != nil {
+		return nil, err
+	}
+	cloud := d.GetCloud()
+	volumeId := req.SourceVolumeId
+	snapshotName := req.Name
+	diskId := fmt.Sprintf(ManagedDiskPath, cloud.SubscriptionID, cloud.ResourceGroup, volumeId)
+
+	snapshot := compute2.Snapshot{
+		Name: to.StringPtr(volumeId),
+		Sku: &compute2.SnapshotSku{
+			Name: compute2.SnapshotStorageAccountTypesStandardLRS,
+		},
+		SnapshotProperties: &compute2.SnapshotProperties{
+			CreationData: &compute2.CreationData{
+				SourceURI:    &diskId,
+				CreateOption: compute2.Copy,
+			},
+			Incremental: &incremental,
+		},
+		Location: to.StringPtr(cloud.Location),
+		//},
+	}
+	log := d.log.WithFields(logrus.Fields{
+		"volume_id":     volumeId,
+		"snapshot_name": snapshotName,
+		"method":        "create_snapshot",
+	})
+	log.Info("create snapshot called")
+	rerr := cloud.SnapshotsClient.CreateOrUpdate(context.Background(), cloud.ResourceGroup, snapshotName, snapshot)
+	if rerr != nil {
+		errMsg := rerr.RawError.Error()
+		if strings.Index(errMsg, "already exist") != -1 {
+			return nil, status.Error(codes.AlreadyExists, errMsg)
+		}
+		return nil, status.Error(codes.Internal, errMsg)
+	}
+	snapshot, rerr = cloud.SnapshotsClient.Get(ctx, cloud.ResourceGroup, snapshotName)
+	if rerr != nil {
+		errMsg := rerr.RawError.Error()
+		return nil, status.Error(codes.Internal, errMsg)
+	}
+	tp, err := ptypes.TimestampProto(snapshot.SnapshotProperties.TimeCreated.ToTime())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to covert creation timestamp: %v", err)
+	}
+
+	log.Info("create snapshot success")
+	if compute.ProvisioningState(*snapshot.SnapshotProperties.ProvisioningState) == compute.ProvisioningStateSucceeded {
+		readyToUse = true
+	}
+	return &csi.CreateSnapshotResponse{
+		Snapshot: &csi.Snapshot{
+			SnapshotId:     snapshotName,
+			SourceVolumeId: volumeId,
+			CreationTime:   tp,
+			ReadyToUse:     readyToUse,
+		},
+	}, nil
 }
 
 // DeleteSnapshot will be called by the CO to delete a snapshot.
-func (d *Driver) DeleteSnapshot(ctx context.Context, request *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	panic("implement me")
+func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+	snapshotName := req.SnapshotId
+	if len(snapshotName) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "snapshot name must be provided")
+	}
+	cloud := d.GetCloud()
+	log := d.log.WithFields(logrus.Fields{
+		"snapshot_name": snapshotName,
+		"method":        "delete_snapshot",
+	})
+	log.Info("delete snapshot called")
+	rerr := cloud.SnapshotsClient.Delete(ctx, cloud.ResourceGroup, snapshotName)
+	if rerr != nil {
+		errMsg := rerr.RawError.Error()
+		return nil, status.Error(codes.Internal, errMsg)
+	}
+	log.Info("delete snapshot success")
+	return &csi.DeleteSnapshotResponse{}, nil
 }
 
 // ListSnapshots returns the information about all snapshots on the storage

@@ -41,6 +41,25 @@ spec:
             requests:
               cpu: 10m
               memory: 20Mi
+        - name: csi-snapshotter
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-snapshotter:v3.0.3
+          args:
+            - "-csi-address=$(ADDRESS)"
+            - "-leader-election"
+            - "--v=2"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            limits:
+              cpu: 100m
+              memory: 100Mi
+            requests:
+              cpu: 10m
+              memory: 20Mi
         - name: csi-attacher
           image: mcr.microsoft.com/oss/kubernetes-csi/csi-attacher:v3.1.0
           args:
