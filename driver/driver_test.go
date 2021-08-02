@@ -40,7 +40,10 @@ func (g *idGenerator) GenerateInvalidNodeID() string {
 }
 
 func TestDriverSuite(t *testing.T) {
-	var eg errgroup.Group
+	var (
+		eg           errgroup.Group
+		maxVolumeBan bool
+	)
 	driver, err := NewFakeDriver(t)
 	require.NoError(t, err)
 	eg.Go(func() error {
@@ -51,15 +54,19 @@ func TestDriverSuite(t *testing.T) {
 		LimitBytes:    pkg.GiBToBytes(15),
 	}
 	disk := NewFakeDisk(stdCapacityRangetest)
+	dataDisk := make([]compute.DataDisk, 0)
+	vm := NewFakeVm(dataDisk)
 	testCloud := driver.GetCloud()
+
 	mockDisksClient := testCloud.DisksClient.(*mockdiskclient.MockInterface)
 	//disk := getTestDisk(test.diskName)
-	var maxVolumeBan = false
-
 	mockDisksClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, diskName string) (compute.Disk, *retry.Error) {
+		//mock for case that volumes not exits
 		if strings.Index(diskName, "unique") != -1 {
 			return compute.Disk{}, &retry.Error{HTTPStatusCode: http.StatusNotFound, RawError: cloudprovider.DiskNotFound}
 		}
+
+		//mock for case that reach max volume limit
 		if strings.Index(diskName, "sanity-max-attach-limit-vol+1") != -1 {
 			maxVolumeBan = true
 		} else {
@@ -70,13 +77,13 @@ func TestDriverSuite(t *testing.T) {
 
 	mockDisksClient.EXPECT().Delete(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockDisksClient.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	dataDisk := make([]compute.DataDisk, 0)
-	vm := NewFakeVm(dataDisk)
 	mockVMsClient := testCloud.VirtualMachinesClient.(*mockvmclient.MockInterface)
 	mockVMsClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, VMName string, expand compute.InstanceViewTypes) (compute.VirtualMachine, *retry.Error) {
+		// mock for case that node not found
 		if strings.Index(VMName, "unique-node") != -1 {
 			return compute.VirtualMachine{}, &retry.Error{HTTPStatusCode: http.StatusNotFound, RawError: cloudprovider.InstanceNotFound}
 		}
+		//mock for case that reach max volume limit
 		if maxVolumeBan {
 			*vm.StorageProfile.DataDisks = make([]compute.DataDisk, _defaultMaxAzureVolumeLimit+1)
 		} else {
@@ -85,10 +92,12 @@ func TestDriverSuite(t *testing.T) {
 		return *vm, nil
 	}).AnyTimes()
 	mockVMsClient.EXPECT().UpdateAsync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, VMName string, parameters compute.VirtualMachineUpdate, source string) (*azure.Future, *retry.Error) {
+		// reset data disks
 		*vm.StorageProfile.DataDisks = make([]compute.DataDisk, 0)
 		return &azure.Future{}, nil
 	}).AnyTimes()
 	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
 	cfg := sanity.NewTestConfig()
 	if err := os.RemoveAll(cfg.TargetPath); err != nil {
 		t.Fatalf("failed to delete target path %s: %s", cfg.TargetPath, err)
