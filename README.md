@@ -29,11 +29,18 @@ kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy
 kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/test-pod.yaml
 ```
 
-## Notice
-Knowing ananas is a csi project merely for study, it supports basic csi functions for now.
+## Deploy volume snapshot crd and controller
+```
+kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/snapshot-controller-deploy.yaml
+kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/vs.yaml
+kubectl create -f https://raw.githubusercontent.com/toughnoah/ananas/main/deploy/vsc.yaml
+```
 
 ## Run Sanity test
 ```
 cd ananas
 make test
 ```
+
+## Notice
+Knowing ananas is a csi project merely for study, it supports basic csi functions and `create/delete` volume snapshot for now.
