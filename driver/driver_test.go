@@ -2,6 +2,8 @@ package driver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2020-12-01/compute"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -15,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/diskclient/mockdiskclient"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/snapshotclient/mocksnapshotclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azureclients/vmclient/mockvmclient"
 	"sigs.k8s.io/cloud-provider-azure/pkg/retry"
 	"strings"
@@ -72,11 +75,19 @@ func TestDriverSuite(t *testing.T) {
 		} else {
 			maxVolumeBan = false
 		}
+		if strings.Index(diskName, "sanity-controller-vol-from-snap") != -1 {
+			return compute.Disk{}, &retry.Error{HTTPStatusCode: http.StatusNotFound, RawError: cloudprovider.DiskNotFound}
+		}
 		return disk, nil
 	}).AnyTimes()
 
 	mockDisksClient.EXPECT().Delete(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
-	mockDisksClient.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockDisksClient.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, diskName string, diskParameter compute.Disk) *retry.Error {
+		if *diskParameter.CreationData.SourceResourceID == "/subscriptions/subscription/resourceGroups/rg/providers/Microsoft.Compute/snapshots/non-existing-snapshot-id" {
+			return &retry.Error{HTTPStatusCode: http.StatusNotFound, RawError: errors.New("NotFound")}
+		}
+		return nil
+	}).AnyTimes()
 	mockVMsClient := testCloud.VirtualMachinesClient.(*mockvmclient.MockInterface)
 	mockVMsClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, VMName string, expand compute.InstanceViewTypes) (compute.VirtualMachine, *retry.Error) {
 		// mock for case that node not found
@@ -97,6 +108,21 @@ func TestDriverSuite(t *testing.T) {
 		return &azure.Future{}, nil
 	}).AnyTimes()
 	mockVMsClient.EXPECT().WaitForUpdateResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	fakeDiskId := fmt.Sprintf(managedDiskPath, testCloud.SubscriptionID, testCloud.ResourceGroup, testVolumeName)
+	snapshot := NewFakeSnapshot(fakeDiskId, testCloud.Location)
+	mockSpClient := testCloud.SnapshotsClient.(*mocksnapshotclient.MockInterface)
+	mockSpClient.EXPECT().CreateOrUpdate(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, snapshotName string, snapshot compute.Snapshot) *retry.Error {
+		if strings.Index(snapshotName, "CreateSnapshot-snapshot-2") != -1 &&
+			strings.Index(*snapshot.Name, "CreateSnapshot-volume-3") != -1 {
+			return &retry.Error{HTTPStatusCode: http.StatusConflict, RawError: errors.New("already exist")}
+		}
+		return nil
+	}).AnyTimes()
+	mockSpClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, snapshotName string) (compute.Snapshot, *retry.Error) {
+		return snapshot, nil
+	}).AnyTimes()
+	mockSpClient.EXPECT().Delete(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	testCloud.SnapshotsClient = mockSpClient
 
 	cfg := sanity.NewTestConfig()
 	if err := os.RemoveAll(cfg.TargetPath); err != nil {

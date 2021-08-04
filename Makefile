@@ -19,7 +19,7 @@ install:
 	@go build -o $(BUILD_PATH)/ananas $(BUILD_PATH)/main.go
 
 .PHONY: docker
-docker:
+docker: install
 	@docker build -t toughnoah/ananas:$(IMG_VER) ./$(BUILD_PATH)
 	@docker push toughnoah/ananas:$(IMG_VER)
 

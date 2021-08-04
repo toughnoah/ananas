@@ -136,11 +136,23 @@ func ValidateNodeUnPublishVolume(req *csi.NodeUnpublishVolumeRequest) error {
 	return nil
 }
 
+// ValidateCreateSnapshot validates the snapshot request
+func ValidateCreateSnapshot(req *csi.CreateSnapshotRequest) error {
+	volumeId := req.GetSourceVolumeId()
+	if len(volumeId) == 0 {
+		return status.Error(codes.InvalidArgument, "CreateSnapshot Source Volume ID must be provided")
+	}
+	snapshotName := req.Name
+	if len(snapshotName) == 0 {
+		return status.Error(codes.InvalidArgument, "snapshot name must be provided")
+	}
+	return nil
+}
+
 // checkDirExists checks directory  exists or not.
 func checkDirExists(p string) bool {
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		return false
 	}
-
 	return true
 }
