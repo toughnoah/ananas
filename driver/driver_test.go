@@ -46,7 +46,6 @@ func TestDriverSuite(t *testing.T) {
 	var (
 		eg           errgroup.Group
 		maxVolumeBan bool
-		//testNoSnapshot bool
 	)
 	driver, err := NewFakeDriver(t)
 	require.NoError(t, err)
@@ -61,14 +60,15 @@ func TestDriverSuite(t *testing.T) {
 	dataDisk := make([]compute.DataDisk, 0)
 	vm := NewFakeVm(dataDisk)
 	testCloud := driver.GetCloud()
+
 	mockDisksClient := testCloud.DisksClient.(*mockdiskclient.MockInterface)
 	//disk := getTestDisk(test.diskName)
 	mockDisksClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, resourceGroupName string, diskName string) (compute.Disk, *retry.Error) {
 		//mock for case that volumes not exits
-
 		if strings.Index(diskName, "unique") != -1 {
 			return compute.Disk{}, &retry.Error{HTTPStatusCode: http.StatusNotFound, RawError: cloudprovider.DiskNotFound}
 		}
+
 		//mock for case that reach max volume limit
 		if strings.Index(diskName, "sanity-max-attach-limit-vol+1") != -1 {
 			maxVolumeBan = true
